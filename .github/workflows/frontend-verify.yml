@@ -156,6 +156,7 @@ jobs:
 
       - name: Install Playwright browser for Storybook tests
         if: inputs.storybook_test_command != ''
+        timeout-minutes: 5
         shell: bash
         run: ${{ inputs.playwright_install_command }}
         working-directory: ${{ inputs.working_directory }}
