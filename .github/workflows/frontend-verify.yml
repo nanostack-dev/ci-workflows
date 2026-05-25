@@ -1,0 +1,167 @@
+name: Frontend Verify
+
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        description: Application name used in the job title
+        required: true
+        type: string
+      working_directory:
+        description: Frontend app working directory
+        required: true
+        type: string
+      cache_dependency_path:
+        description: Dependency file used for pnpm cache invalidation
+        required: true
+        type: string
+      node_version:
+        description: Node.js version to install
+        required: false
+        default: '22'
+        type: string
+      pnpm_version:
+        description: pnpm version to install
+        required: false
+        default: '10'
+        type: string
+      install_command:
+        description: Command used to install frontend dependencies
+        required: false
+        default: pnpm install --frozen-lockfile
+        type: string
+      build_env:
+        description: Multiline environment variables exported before running commands
+        required: false
+        default: ''
+        type: string
+      generate_command:
+        description: Optional code generation command
+        required: false
+        default: ''
+        type: string
+      verify_generated_path:
+        description: Optional repo-root path to verify after generation with git diff --exit-code
+        required: false
+        default: ''
+        type: string
+      lint_command:
+        description: Optional lint command
+        required: false
+        default: ''
+        type: string
+      typecheck_command:
+        description: Optional typecheck command
+        required: false
+        default: ''
+        type: string
+      test_command:
+        description: Optional test command
+        required: false
+        default: ''
+        type: string
+      build_command:
+        description: Frontend production build command
+        required: true
+        type: string
+      storybook_build_command:
+        description: Optional Storybook production build command
+        required: false
+        default: ''
+        type: string
+      storybook_test_command:
+        description: Optional Storybook test command
+        required: false
+        default: ''
+        type: string
+      playwright_install_command:
+        description: Command used to install Playwright when Storybook tests are enabled
+        required: false
+        default: pnpm exec playwright install --with-deps chromium
+        type: string
+
+jobs:
+  verify:
+    name: Verify ${{ inputs.app_name }} frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Export build environment
+        if: inputs.build_env != ''
+        shell: bash
+        env:
+          BUILD_ENV_BLOCK: ${{ inputs.build_env }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$BUILD_ENV_BLOCK" >> "$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@v6.0.6
+        with:
+          version: ${{ inputs.pnpm_version }}
+          run_install: false
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: pnpm
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: ${{ inputs.install_command }}
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Run frontend code generation
+        if: inputs.generate_command != ''
+        shell: bash
+        run: ${{ inputs.generate_command }}
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Verify generated files are committed
+        if: inputs.verify_generated_path != ''
+        shell: bash
+        run: git diff --exit-code -- "${{ inputs.verify_generated_path }}"
+
+      - name: Lint frontend
+        if: inputs.lint_command != ''
+        shell: bash
+        run: ${{ inputs.lint_command }}
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Typecheck frontend
+        if: inputs.typecheck_command != ''
+        shell: bash
+        run: ${{ inputs.typecheck_command }}
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Test frontend
+        if: inputs.test_command != ''
+        shell: bash
+        run: ${{ inputs.test_command }}
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Build frontend
+        shell: bash
+        run: ${{ inputs.build_command }}
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Build Storybook
+        if: inputs.storybook_build_command != ''
+        shell: bash
+        run: ${{ inputs.storybook_build_command }}
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Install Playwright browser for Storybook tests
+        if: inputs.storybook_test_command != ''
+        shell: bash
+        run: ${{ inputs.playwright_install_command }}
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Run Storybook tests
+        if: inputs.storybook_test_command != ''
+        shell: bash
+        run: ${{ inputs.storybook_test_command }}
+        working-directory: ${{ inputs.working_directory }}
