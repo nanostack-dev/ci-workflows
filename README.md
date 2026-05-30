@@ -7,5 +7,6 @@ This repo is intended to contain only verification and build workflows such as:
 - frontend verify
 - Go build and test
 - container image publishing
+- repository dispatch handoff to the private deploy repo
 
 It should not contain deploy, preview, infra checkout, or environment-specific secret orchestration.

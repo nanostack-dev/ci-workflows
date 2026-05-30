@@ -81,16 +81,14 @@ on:
         required: false
         default: true
         type: boolean
-    secrets:
-      GO_MODULES_TOKEN:
-        required: false
-
+    outputs:
+      deploy_image_tag:
+        description: Image tag resolved for downstream deploy workflows
+        value: ${{ jobs.docker-push.outputs.deploy_image_tag }}
 jobs:
   lint:
     name: Lint ${{ inputs.app_name }} app
     runs-on: ubuntu-latest
-    env:
-      GO_MODULES_TOKEN: ${{ secrets.GO_MODULES_TOKEN }}
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -104,16 +102,6 @@ jobs:
         with:
           go-version: ${{ inputs.go_version }}
           cache-dependency-path: ${{ inputs.cache_dependency_path }}
-
-      - name: Configure private Go module access
-        if: env.GO_MODULES_TOKEN != ''
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          git config --global url."https://x-access-token:${GO_MODULES_TOKEN}@github.com/".insteadOf https://github.com/
-          go env -w GOPRIVATE=github.com/nanostack-dev/*
-          go env -w GONOSUMDB=github.com/nanostack-dev/*
 
       - name: Download dependencies first
         run: |
@@ -132,8 +120,6 @@ jobs:
     name: Test ${{ inputs.app_name }} app
     runs-on: ubuntu-latest
     needs: lint
-    env:
-      GO_MODULES_TOKEN: ${{ secrets.GO_MODULES_TOKEN }}
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -147,16 +133,6 @@ jobs:
         with:
           go-version: ${{ inputs.go_version }}
           cache-dependency-path: ${{ inputs.cache_dependency_path }}
-
-      - name: Configure private Go module access
-        if: env.GO_MODULES_TOKEN != ''
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          git config --global url."https://x-access-token:${GO_MODULES_TOKEN}@github.com/".insteadOf https://github.com/
-          go env -w GOPRIVATE=github.com/nanostack-dev/*
-          go env -w GONOSUMDB=github.com/nanostack-dev/*
 
       - name: Download dependencies first
         run: |
@@ -196,6 +172,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, tests]
     if: inputs.publish_image
+    outputs:
+      deploy_image_tag: ${{ steps.deploy_tag.outputs.deploy_image_tag }}
     permissions:
       contents: read
       packages: write

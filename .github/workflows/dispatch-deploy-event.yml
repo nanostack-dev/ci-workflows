@@ -1,0 +1,82 @@
+name: Dispatch Deploy Event
+
+on:
+  workflow_call:
+    inputs:
+      deploy_repository:
+        description: Private control-plane repository that receives the deploy or preview dispatch
+        required: false
+        default: ''
+        type: string
+      event_type:
+        description: repository_dispatch event type to send
+        required: true
+        type: string
+      payload:
+        description: JSON payload forwarded to the private control-plane repository
+        required: true
+        type: string
+    secrets:
+      DEPLOY_TOKEN:
+        required: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+    steps:
+      - name: Decide whether dispatch should run
+        id: config
+        shell: bash
+        run: |
+          set -euo pipefail
+          should_dispatch=true
+          if [[ -z '${{ inputs.deploy_repository }}' || -z "${DEPLOY_TOKEN:-}" ]]; then
+            should_dispatch=false
+          fi
+          echo "should_dispatch=$should_dispatch" >> "$GITHUB_OUTPUT"
+
+      - name: Validate payload JSON
+        if: steps.config.outputs.should_dispatch == 'true'
+        shell: bash
+        env:
+          PAYLOAD: ${{ inputs.payload }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PAYLOAD" | jq -e . >/dev/null
+
+      - name: Dispatch event to private control-plane repository
+        if: steps.config.outputs.should_dispatch == 'true'
+        uses: peter-evans/repository-dispatch@v3.0.0
+        with:
+          token: ${{ secrets.DEPLOY_TOKEN }}
+          repository: ${{ inputs.deploy_repository }}
+          event-type: ${{ inputs.event_type }}
+          client-payload: ${{ inputs.payload }}
+
+      - name: Write dispatch summary
+        if: steps.config.outputs.should_dispatch == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '## Dispatch summary'
+            echo
+            echo "- Repository: ${{ inputs.deploy_repository }}"
+            echo "- Event type: ${{ inputs.event_type }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Explain skipped dispatch
+        if: steps.config.outputs.should_dispatch != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '## Dispatch skipped'
+            echo
+            echo '- Set the DEPLOY_TOKEN secret with permission to dispatch workflows in nanostack-dev/infra.'
+            echo '- This workflow currently dispatches into the private infra control plane.'
+          } >> "$GITHUB_STEP_SUMMARY"
