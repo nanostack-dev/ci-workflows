@@ -69,14 +69,17 @@ jobs:
             echo "- Event type: ${{ inputs.event_type }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Explain skipped dispatch
+      - name: Fail on missing dispatch configuration
         if: steps.config.outputs.should_dispatch != 'true'
         shell: bash
         run: |
           set -euo pipefail
           {
-            echo '## Dispatch skipped'
+            echo '## Dispatch failed'
             echo
+            echo '- The deploy_repository input and the DEPLOY_TOKEN secret are both required.'
             echo '- Set the DEPLOY_TOKEN secret with permission to dispatch workflows in nanostack-dev/infra.'
-            echo '- This workflow currently dispatches into the private infra control plane.'
+            echo '- A silently skipped dispatch leaves deploys unsent and previews undestroyed, so this is a hard failure.'
           } >> "$GITHUB_STEP_SUMMARY"
+          echo 'dispatch not configured: deploy_repository input or DEPLOY_TOKEN secret is missing' >&2
+          exit 1
