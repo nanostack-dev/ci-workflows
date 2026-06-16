@@ -150,6 +150,7 @@ jobs:
           TEST_SUITES_JSON: ${{ inputs.test_suites_json }}
         run: |
           set -euo pipefail
+          export PATH="$(go env GOPATH)/bin:$PATH"
           failed=0
 
           while IFS= read -r suite; do
@@ -158,7 +159,7 @@ jobs:
             command="$(printf '%s' "$suite" | jq -r '.command')"
 
             echo "::group::$name"
-            if ! (cd "$working_directory" && bash -lc "$command"); then
+            if ! (cd "$working_directory" && bash -c "$command"); then
               echo "$name failed"
               failed=1
             fi
