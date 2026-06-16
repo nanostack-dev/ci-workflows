@@ -158,7 +158,7 @@ jobs:
             command="$(printf '%s' "$suite" | jq -r '.command')"
 
             echo "::group::$name"
-            if ! (cd "$working_directory" && bash -lc "$command"); then
+            if ! (cd "$working_directory" && bash -c "$command"); then
               echo "$name failed"
               failed=1
             fi
