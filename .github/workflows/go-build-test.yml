@@ -88,7 +88,7 @@ on:
 jobs:
   lint:
     name: Lint ${{ inputs.app_name }} app
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -118,7 +118,7 @@ jobs:
 
   tests:
     name: Test ${{ inputs.app_name }} app
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     needs: lint
     steps:
       - uses: actions/checkout@v6.0.2
@@ -169,7 +169,7 @@ jobs:
 
   docker-push:
     name: Build and Push Container Image
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     needs: [lint, tests]
     if: inputs.publish_image
     outputs:
