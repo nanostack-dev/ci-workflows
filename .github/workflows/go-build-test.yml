@@ -143,6 +143,11 @@ jobs:
         run: |
           go install gotest.tools/gotestsum@v1.13.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          # Test suites run via `bash -lc`, a login shell that re-initializes PATH
+          # from the system profile and drops the $GITHUB_PATH addition above.
+          # Install gotestsum into /usr/local/bin (always on the login-shell PATH)
+          # so the binary stays resolvable inside each suite shell.
+          sudo install -m 0755 "$(go env GOPATH)/bin/gotestsum" /usr/local/bin/gotestsum
 
       - name: Run configured test suites
         shell: bash
