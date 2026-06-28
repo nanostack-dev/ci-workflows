@@ -1,0 +1,84 @@
+name: Echopoint Flow Tests
+
+# Reusable: run a tagged echopoint flow suite as a contract test.
+#
+# The test flows live in the PROD echopoint control plane (api.echopoint.dev);
+# the `environment` overlay points their requests at the target API (e.g. the
+# just-deployed dev API). Warn-only: the job always succeeds and exposes the
+# suite result via the `outcome` output, so callers decide whether to gate on it.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Flow tag selecting the suite to run (e.g. anchor, echopoint).
+        required: true
+        type: string
+      environment:
+        description: Echopoint environment key overlaid on the flows (supplies their vars).
+        required: false
+        default: dev
+        type: string
+      match_mode:
+        description: 'Tag match mode: any (default) or all.'
+        required: false
+        default: any
+        type: string
+      parallel:
+        description: Number of flows to run concurrently.
+        required: false
+        default: '3'
+        type: string
+      poll_timeout:
+        description: Max seconds to wait for each flow.
+        required: false
+        default: '600'
+        type: string
+      cli_version:
+        description: echopoint CLI version to use.
+        required: false
+        default: latest
+        type: string
+    secrets:
+      OP_SERVICE_ACCOUNT_TOKEN:
+        required: true
+    outputs:
+      outcome:
+        description: Suite result (success or failure).
+        value: ${{ jobs.test.outputs.outcome }}
+
+jobs:
+  test:
+    name: Echopoint flow suite (${{ inputs.tag }})
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    outputs:
+      outcome: ${{ steps.run.outcome }}
+    steps:
+      - name: Load echopoint CI credentials from 1Password
+        uses: 1password/load-secrets-action@v4
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          ECHOPOINT_CI_API_KEY: op://Nanostack/infra-control-plane/ECHOPOINT_CI_API_KEY_PROD
+          ECHOPOINT_CI_ORG_ID: op://Nanostack/infra-control-plane/ECHOPOINT_CI_ORG_ID_PROD
+
+      - name: Run flow suite
+        id: run
+        continue-on-error: true
+        uses: nanostack-dev/echopoint-cli@v1
+        with:
+          api-key: ${{ env.ECHOPOINT_CI_API_KEY }}
+          organization-id: ${{ env.ECHOPOINT_CI_ORG_ID }}
+          api-url: https://api.echopoint.dev
+          tags: ${{ inputs.tag }}
+          match-mode: ${{ inputs.match_mode }}
+          environment: ${{ inputs.environment }}
+          parallel: ${{ inputs.parallel }}
+          poll-timeout: ${{ inputs.poll_timeout }}
+          cli-version: ${{ inputs.cli_version }}
+
+      - name: Warn on failure
+        if: ${{ steps.run.outcome == 'failure' }}
+        shell: bash
+        run: |
+          echo "::warning::echopoint flow suite (tag '${{ inputs.tag }}') failed against the '${{ inputs.environment }}' environment." >&2
