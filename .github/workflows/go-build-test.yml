@@ -238,9 +238,14 @@ jobs:
       # Blacksmith build-push-action mounts the Docker layer cache from a
       # sticky disk — incremental builds out of the box, no slow GHA cache
       # import/export (previously ~60s/run shuffling layers over the network).
+      # v2 splits builder provisioning into setup-docker-builder; the sticky
+      # disk cache is still automatic, so no cache-from/cache-to is needed.
+      - name: Set up Blacksmith Docker builder
+        uses: useblacksmith/setup-docker-builder@v1
+
       - name: Build and push container image
         id: build
-        uses: useblacksmith/build-push-action@v1
+        uses: useblacksmith/build-push-action@v2
         with:
           context: ${{ inputs.docker_context }}
           file: ${{ inputs.dockerfile_path }}
