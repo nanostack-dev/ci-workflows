@@ -16,13 +16,18 @@ on:
         description: JSON payload forwarded to the private control-plane repository
         required: true
         type: string
+      runner:
+        description: Runner label for all jobs (private-repo CI passes nanostack-dev for the self-hosted runners)
+        required: false
+        default: ubuntu-latest
+        type: string
     secrets:
       DEPLOY_TOKEN:
         required: false
 
 jobs:
   dispatch:
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner }}
     permissions:
       contents: read
     env:

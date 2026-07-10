@@ -81,6 +81,11 @@ on:
         required: false
         default: true
         type: boolean
+      runner:
+        description: Runner label for all jobs (private-repo CI passes nanostack-dev for the self-hosted runners)
+        required: false
+        default: ubuntu-latest
+        type: string
     outputs:
       deploy_image_tag:
         description: Image tag resolved for downstream deploy workflows
@@ -88,7 +93,7 @@ on:
 jobs:
   lint:
     name: Lint ${{ inputs.app_name }} app
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner }}
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -118,7 +123,7 @@ jobs:
 
   tests:
     name: Test ${{ inputs.app_name }} app
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner }}
     # Independent of lint — run in parallel. Lint failure still fails the overall
     # reusable-workflow result, so deploy/preview dispatch stays gated on lint.
     steps:
@@ -176,7 +181,7 @@ jobs:
 
   docker-push:
     name: Build and Push Container Image
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner }}
     # Gate the image on tests only — it must reflect tested code. Lint runs in
     # parallel and still fails the overall workflow (gating deploy) on its own.
     needs: tests
@@ -193,7 +198,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6.0.2
 
-      # Buildx is configured automatically by the Blacksmith build-push-action.
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4.1.0
         with:
@@ -235,17 +239,37 @@ jobs:
             org.opencontainers.image.description=${{ inputs.image_description }}
             org.opencontainers.image.vendor=${{ github.repository_owner }}
 
-      # Blacksmith build-push-action mounts the Docker layer cache from a
-      # sticky disk — incremental builds out of the box, no slow GHA cache
-      # import/export (previously ~60s/run shuffling layers over the network).
-      # v2 splits builder provisioning into setup-docker-builder; the sticky
-      # disk cache is still automatic, so no cache-from/cache-to is needed.
-      - name: Set up Blacksmith Docker builder
-        uses: useblacksmith/setup-docker-builder@v1
+      # GitHub-hosted runners are ephemeral, so buildx shuttles the docker
+      # layer cache through the GHA cache backend.
+      - name: Set up Docker Buildx
+        if: startsWith(inputs.runner, 'ubuntu')
+        uses: docker/setup-buildx-action@v4.2.0
 
-      - name: Build and push container image
-        id: build
-        uses: useblacksmith/build-push-action@v2
+      - name: Build and push container image (GitHub-hosted)
+        id: build_hosted
+        if: startsWith(inputs.runner, 'ubuntu')
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: ${{ inputs.docker_context }}
+          file: ${{ inputs.dockerfile_path }}
+          platforms: ${{ inputs.build_platforms }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+
+      # Self-hosted runners skip setup-buildx on purpose: without a dedicated
+      # buildx builder, build-push-action drives the host docker daemon, whose
+      # local layer cache persists across jobs — no cache import/export at all.
+      - name: Build and push container image (self-hosted)
+        id: build_selfhosted
+        if: ${{ !startsWith(inputs.runner, 'ubuntu') }}
+        uses: docker/build-push-action@v7.3.0
         with:
           context: ${{ inputs.docker_context }}
           file: ${{ inputs.dockerfile_path }}
@@ -286,7 +310,7 @@ jobs:
           cat > deploy-metadata.env <<EOF
           image_repository=${{ inputs.image_repository }}
           image_tag=${{ steps.deploy_tag.outputs.deploy_image_tag }}
-          image_digest=${{ steps.build.outputs.digest }}
+          image_digest=${{ steps.build_hosted.outputs.digest || steps.build_selfhosted.outputs.digest }}
           git_sha=${GITHUB_SHA}
           EOF
 
