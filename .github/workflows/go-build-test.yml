@@ -82,9 +82,9 @@ on:
         default: true
         type: boolean
       runner:
-        description: Runner label for all jobs (public repos should pass ubuntu-latest)
+        description: Runner label for all jobs (private-repo CI passes nanostack-dev for the self-hosted runners)
         required: false
-        default: blacksmith-2vcpu-ubuntu-2404
+        default: ubuntu-latest
         type: string
     outputs:
       deploy_image_tag:
@@ -239,41 +239,15 @@ jobs:
             org.opencontainers.image.description=${{ inputs.image_description }}
             org.opencontainers.image.vendor=${{ github.repository_owner }}
 
-      # Blacksmith build-push-action mounts the Docker layer cache from a
-      # sticky disk — incremental builds out of the box, no slow GHA cache
-      # import/export (previously ~60s/run shuffling layers over the network).
-      # v2 splits builder provisioning into setup-docker-builder; the sticky
-      # disk cache is still automatic, so no cache-from/cache-to is needed.
-      # Buildx is configured automatically by the Blacksmith build-push-action.
-      - name: Set up Blacksmith Docker builder
-        if: startsWith(inputs.runner, 'blacksmith')
-        uses: useblacksmith/setup-docker-builder@v1
-
-      - name: Build and push container image (Blacksmith)
-        id: build_blacksmith
-        if: startsWith(inputs.runner, 'blacksmith')
-        uses: useblacksmith/build-push-action@v2
-        with:
-          context: ${{ inputs.docker_context }}
-          file: ${{ inputs.dockerfile_path }}
-          platforms: ${{ inputs.build_platforms }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ steps.meta.outputs.version }}
-            COMMIT_SHA=${{ github.sha }}
-            BUILD_DATE=${{ github.event.head_commit.timestamp }}
-
-      # Non-Blacksmith runners (e.g. public repos on GitHub-hosted ubuntu-latest)
-      # use vanilla buildx with the GHA cache backend instead of sticky disks.
+      # GitHub-hosted runners are ephemeral, so buildx shuttles the docker
+      # layer cache through the GHA cache backend.
       - name: Set up Docker Buildx
-        if: ${{ !startsWith(inputs.runner, 'blacksmith') }}
+        if: startsWith(inputs.runner, 'ubuntu')
         uses: docker/setup-buildx-action@v4.2.0
 
-      - name: Build and push container image
+      - name: Build and push container image (GitHub-hosted)
         id: build_hosted
-        if: ${{ !startsWith(inputs.runner, 'blacksmith') }}
+        if: startsWith(inputs.runner, 'ubuntu')
         uses: docker/build-push-action@v7.3.0
         with:
           context: ${{ inputs.docker_context }}
@@ -284,6 +258,25 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+
+      # Self-hosted runners skip setup-buildx on purpose: without a dedicated
+      # buildx builder, build-push-action drives the host docker daemon, whose
+      # local layer cache persists across jobs — no cache import/export at all.
+      - name: Build and push container image (self-hosted)
+        id: build_selfhosted
+        if: ${{ !startsWith(inputs.runner, 'ubuntu') }}
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: ${{ inputs.docker_context }}
+          file: ${{ inputs.dockerfile_path }}
+          platforms: ${{ inputs.build_platforms }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             COMMIT_SHA=${{ github.sha }}
@@ -317,7 +310,7 @@ jobs:
           cat > deploy-metadata.env <<EOF
           image_repository=${{ inputs.image_repository }}
           image_tag=${{ steps.deploy_tag.outputs.deploy_image_tag }}
-          image_digest=${{ steps.build_blacksmith.outputs.digest || steps.build_hosted.outputs.digest }}
+          image_digest=${{ steps.build_hosted.outputs.digest || steps.build_selfhosted.outputs.digest }}
           git_sha=${GITHUB_SHA}
           EOF
 

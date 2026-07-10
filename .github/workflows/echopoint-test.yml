@@ -39,9 +39,9 @@ on:
         default: latest
         type: string
       runner:
-        description: Runner label for all jobs (public repos should pass ubuntu-latest)
+        description: Runner label for all jobs (private-repo CI passes nanostack-dev for the self-hosted runners)
         required: false
-        default: blacksmith-2vcpu-ubuntu-2404
+        default: ubuntu-latest
         type: string
     secrets:
       OP_SERVICE_ACCOUNT_TOKEN:
