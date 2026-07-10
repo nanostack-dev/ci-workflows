@@ -38,6 +38,11 @@ on:
         required: false
         default: latest
         type: string
+      runner:
+        description: Runner label for all jobs (public repos should pass ubuntu-latest)
+        required: false
+        default: blacksmith-2vcpu-ubuntu-2404
+        type: string
     secrets:
       OP_SERVICE_ACCOUNT_TOKEN:
         required: true
@@ -49,7 +54,7 @@ on:
 jobs:
   test:
     name: Echopoint flow suite (${{ inputs.tag }})
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner }}
     outputs:
       outcome: ${{ steps.run.outcome }}
     steps:
