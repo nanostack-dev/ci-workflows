@@ -84,11 +84,31 @@ on:
         required: false
         default: ubuntu-latest
         type: string
+      storybook_test_timeout_minutes:
+        description: >-
+          Timeout for the Storybook test step alone. Keep it below
+          timeout_minutes so a hung browser run is attributed to this step rather
+          than failing the whole job anonymously.
+        required: false
+        default: 20
+        type: number
+      timeout_minutes:
+        description: >-
+          Job timeout. Guards against a hung browser-mode test run: vitest browser
+          mode can stop making progress without failing or exiting, and with no
+          timeout the job inherits GitHub's 360-minute default while holding a
+          runner slot the whole time (observed 2026-07-30, 22 minutes before a
+          manual cancel). Raise this for genuinely long suites rather than
+          removing it.
+        required: false
+        default: 30
+        type: number
 
 jobs:
   verify:
     name: Verify ${{ inputs.app_name }} frontend
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     permissions:
       contents: read
     steps:
@@ -159,6 +179,32 @@ jobs:
         run: ${{ inputs.storybook_build_command }}
         working-directory: ${{ inputs.working_directory }}
 
+      # The browser download is ~60s per run and the bytes never change for a given
+      # Playwright version. Only worth caching on GitHub-hosted runners: a
+      # self-hosted runner keeps ~/.cache/ms-playwright between jobs already, so
+      # restoring an archive over files that are present is pure overhead.
+      - name: Resolve Playwright version
+        id: playwright_version
+        if: inputs.storybook_test_command != '' && runner.environment == 'github-hosted'
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('playwright/package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Playwright $version"
+
+      - name: Cache Playwright browsers
+        if: inputs.storybook_test_command != '' && runner.environment == 'github-hosted'
+        uses: actions/cache@v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright_version.outputs.version }}
+
+      # Left unconditional on purpose. `playwright install` is idempotent — on a
+      # cache hit it finds the browser already present and skips the download,
+      # while still installing the OS-level dependencies that `--with-deps`
+      # provides and that the cache does not contain.
       - name: Install Playwright browser for Storybook tests
         if: inputs.storybook_test_command != ''
         timeout-minutes: 5
@@ -168,6 +214,9 @@ jobs:
 
       - name: Run Storybook tests
         if: inputs.storybook_test_command != ''
+        # Below the job timeout so a hung run fails on this step with a clear
+        # attribution instead of the whole job timing out anonymously.
+        timeout-minutes: ${{ inputs.storybook_test_timeout_minutes }}
         shell: bash
         run: ${{ inputs.storybook_test_command }}
         working-directory: ${{ inputs.working_directory }}
