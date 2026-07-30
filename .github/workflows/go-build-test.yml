@@ -86,6 +86,14 @@ on:
         required: false
         default: ubuntu-latest
         type: string
+      timeout_minutes:
+        description: >-
+          Per-job timeout. Without one, a job that wedges rather than fails
+          inherits GitHub's 360-minute default, and on a self-hosted runner it
+          holds one of the few slots for that entire time.
+        required: false
+        default: 30
+        type: number
     outputs:
       deploy_image_tag:
         description: Image tag resolved for downstream deploy workflows
@@ -94,6 +102,7 @@ jobs:
   lint:
     name: Lint ${{ inputs.app_name }} app
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -124,6 +133,7 @@ jobs:
   tests:
     name: Test ${{ inputs.app_name }} app
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     # Independent of lint — run in parallel. Lint failure still fails the overall
     # reusable-workflow result, so deploy/preview dispatch stays gated on lint.
     steps:
@@ -182,6 +192,7 @@ jobs:
   docker-push:
     name: Build and Push Container Image
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     # Gate the image on tests only — it must reflect tested code. Lint runs in
     # parallel and still fails the overall workflow (gating deploy) on its own.
     needs: tests
