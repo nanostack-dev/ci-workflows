@@ -196,7 +196,7 @@ jobs:
 
       - name: Cache Playwright browsers
         if: inputs.storybook_test_command != '' && runner.environment == 'github-hosted'
-        uses: actions/cache@v4.3.0
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ steps.playwright_version.outputs.version }}
