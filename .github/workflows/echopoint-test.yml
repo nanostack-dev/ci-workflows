@@ -4,8 +4,9 @@ name: Echopoint Flow Tests
 #
 # The test flows live in the PROD echopoint control plane (api.echopoint.dev);
 # the `environment` overlay points their requests at the target API (e.g. the
-# just-deployed dev API). Warn-only: the job always succeeds and exposes the
-# suite result via the `outcome` output, so callers decide whether to gate on it.
+# just-deployed dev API). A failing suite fails this job, so a broken deploy is
+# visible at the point it breaks rather than only in a caller's promotion gate.
+# The `outcome` output is still published for callers that inspect it directly.
 on:
   workflow_call:
     inputs:
@@ -69,7 +70,6 @@ jobs:
 
       - name: Run flow suite
         id: run
-        continue-on-error: true
         uses: nanostack-dev/echopoint-cli@v1
         with:
           api-key: ${{ env.ECHOPOINT_CI_API_KEY }}
@@ -82,8 +82,8 @@ jobs:
           poll-timeout: ${{ inputs.poll_timeout }}
           cli-version: ${{ inputs.cli_version }}
 
-      - name: Warn on failure
-        if: ${{ steps.run.outcome == 'failure' }}
+      - name: Annotate failure
+        if: ${{ failure() && steps.run.outcome == 'failure' }}
         shell: bash
         run: |
-          echo "::warning::echopoint flow suite (tag '${{ inputs.tag }}') failed against the '${{ inputs.environment }}' environment." >&2
+          echo "::error::echopoint flow suite (tag '${{ inputs.tag }}') failed against the '${{ inputs.environment }}' environment." >&2
