@@ -209,12 +209,43 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6.0.2
 
+      # Retried, because ghcr.io rejects a correctly-scoped token often enough to
+      # matter: on 2026-08-05 an anchor PR got `denied: denied` here with
+      # `Packages: write` granted, sandwiched between runs that logged in fine
+      # nine minutes either side. This is the first step that touches the
+      # network after `needs: tests`, so one blip discards a full test run and
+      # red-fails the PR gate for every service calling this workflow.
+      #
+      # docker/login-action has no retry input and a `uses:` step cannot be
+      # wrapped in a loop, hence plain docker CLI. What that action gave us for
+      # free was the post-job `docker logout`; the step at the end of this job
+      # replaces it, and it is not optional — on self-hosted runners
+      # ~/.docker/config.json outlives the job.
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4.1.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          attempts=3
+
+          for attempt in $(seq 1 "$attempts"); do
+            if printf '%s' "$GHCR_TOKEN" |
+              docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin; then
+              exit 0
+            fi
+
+            if [ "$attempt" -lt "$attempts" ]; then
+              delay=$((attempt * 5))
+              echo "::warning::ghcr.io login failed (attempt $attempt/$attempts); retrying in ${delay}s"
+              sleep "$delay"
+            fi
+          done
+
+          echo "ghcr.io login failed after $attempts attempts" >&2
+          exit 1
 
       - name: Configure SHA tag format
         id: tag_config
@@ -331,3 +362,13 @@ jobs:
           name: deploy-metadata
           path: deploy-metadata.env
           if-no-files-found: error
+
+      # Stands in for the post-job logout docker/login-action used to run. Only
+      # load-bearing on self-hosted runners, where the credentials would
+      # otherwise sit in ~/.docker/config.json for whatever job lands next.
+      # `always()` so a failed build still cleans up, and `|| true` so cleanup
+      # never becomes the reason the job goes red.
+      - name: Log out of GitHub Container Registry
+        if: always()
+        shell: bash
+        run: docker logout ghcr.io || true
