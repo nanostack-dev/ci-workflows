@@ -40,6 +40,15 @@ on:
         required: false
         default: false
         type: boolean
+      skip_lint:
+        description: >-
+          Skip the lint job entirely. Escape hatch for a caller whose code
+          golangci-lint cannot currently analyse at all — not a way to silence
+          findings, which belong in .golangci.yml. Defaults to false so every
+          caller keeps its lint deploy gate unless it opts out deliberately.
+        required: false
+        default: false
+        type: boolean
       test_suites_json:
         description: JSON array of test suites with name, working_directory, and command
         required: true
@@ -103,6 +112,7 @@ jobs:
     name: Lint ${{ inputs.app_name }} app
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
+    if: ${{ !inputs.skip_lint }}
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -135,7 +145,8 @@ jobs:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
     # Independent of lint — run in parallel. Lint failure still fails the overall
-    # reusable-workflow result, so deploy/preview dispatch stays gated on lint.
+    # reusable-workflow result, so deploy/preview dispatch stays gated on lint —
+    # except for a caller passing skip_lint, which drops that gate for itself.
     steps:
       - uses: actions/checkout@v6.0.2
 
