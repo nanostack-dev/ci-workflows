@@ -74,10 +74,10 @@ on:
         required: false
         default: ''
         type: string
-      playwright_install_command:
-        description: Command used to install Playwright when Storybook tests are enabled
+      playwright_browser:
+        description: Playwright browser installed when Storybook tests are enabled
         required: false
-        default: pnpm exec playwright install --with-deps chromium
+        default: chromium
         type: string
       runner:
         description: Runner label for all jobs (private-repo CI passes nanostack-dev for the self-hosted runners)
@@ -148,7 +148,22 @@ jobs:
       - name: Verify generated files are committed
         if: inputs.verify_generated_path != ''
         shell: bash
-        run: git diff --exit-code -- "${{ inputs.verify_generated_path }}"
+        env:
+          GENERATED_PATH: ${{ inputs.verify_generated_path }}
+        run: |
+          set -euo pipefail
+          # `git add` exits 128 on a pathspec that matches nothing, where the
+          # plain `git diff` this step used to run exited 0. Say why, rather than
+          # failing the job on a bare `fatal: pathspec ... did not match`.
+          if [[ ! -e "$GENERATED_PATH" ]]; then
+            echo "verify_generated_path '$GENERATED_PATH' does not exist. Check the path, and that generate_command produced it." >&2
+            exit 1
+          fi
+          # --intent-to-add first: plain `git diff` ignores untracked paths, so a
+          # generator that emits a brand-new file — an added endpoint, the exact
+          # case this step exists to catch — would leave the tree looking clean.
+          git add --intent-to-add -- "$GENERATED_PATH"
+          git diff --exit-code -- "$GENERATED_PATH"
 
       - name: Lint frontend
         if: inputs.lint_command != ''
@@ -201,15 +216,39 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ steps.playwright_version.outputs.version }}
 
-      # Left unconditional on purpose. `playwright install` is idempotent — on a
-      # cache hit it finds the browser already present and skips the download,
-      # while still installing the OS-level dependencies that `--with-deps`
-      # provides and that the cache does not contain.
+      # Two steps rather than one, because the browser install and the OS
+      # dependency install belong on different runners. `playwright install` is
+      # idempotent either way — on a cache hit it finds the browser present and
+      # skips the download.
+      #
+      # `--with-deps` only on self-hosted. A github-hosted ubuntu image already
+      # carries every Chromium runtime library, and logs each one as "is already
+      # the newest version"; the only packages the flag actually adds there are
+      # CJK and Cyrillic fonts (21 MB) that assertion-based story tests never
+      # render. What it does add is a full `apt-get update` against six repos on
+      # every run — ~13s typical, and the sole observed hang: anchor run
+      # 32172371458 sat in it for 5 minutes and timed out on a warm browser
+      # cache. A self-hosted runner is a plain box and does need the libraries.
+      # The browser name reaches bash through the environment, never through
+      # `${{ }}` inside `run:`. GitHub's secure-use reference calls the
+      # intermediate environment variable the preferred form: the value is read
+      # as a variable instead of being pasted into the generated shell script.
       - name: Install Playwright browser for Storybook tests
-        if: inputs.storybook_test_command != ''
+        if: inputs.storybook_test_command != '' && runner.environment == 'github-hosted'
         timeout-minutes: 5
         shell: bash
-        run: ${{ inputs.playwright_install_command }}
+        env:
+          PLAYWRIGHT_BROWSER: ${{ inputs.playwright_browser }}
+        run: pnpm exec playwright install "$PLAYWRIGHT_BROWSER"
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Install Playwright browser and OS dependencies for Storybook tests
+        if: inputs.storybook_test_command != '' && runner.environment != 'github-hosted'
+        timeout-minutes: 5
+        shell: bash
+        env:
+          PLAYWRIGHT_BROWSER: ${{ inputs.playwright_browser }}
+        run: pnpm exec playwright install --with-deps "$PLAYWRIGHT_BROWSER"
         working-directory: ${{ inputs.working_directory }}
 
       - name: Run Storybook tests
