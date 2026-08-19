@@ -229,18 +229,26 @@ jobs:
       # every run — ~13s typical, and the sole observed hang: anchor run
       # 32172371458 sat in it for 5 minutes and timed out on a warm browser
       # cache. A self-hosted runner is a plain box and does need the libraries.
+      # The browser name reaches bash through the environment, never through
+      # `${{ }}` inside `run:`. GitHub's secure-use reference calls the
+      # intermediate environment variable the preferred form: the value is read
+      # as a variable instead of being pasted into the generated shell script.
       - name: Install Playwright browser for Storybook tests
         if: inputs.storybook_test_command != '' && runner.environment == 'github-hosted'
         timeout-minutes: 5
         shell: bash
-        run: pnpm exec playwright install ${{ inputs.playwright_browser }}
+        env:
+          PLAYWRIGHT_BROWSER: ${{ inputs.playwright_browser }}
+        run: pnpm exec playwright install "$PLAYWRIGHT_BROWSER"
         working-directory: ${{ inputs.working_directory }}
 
       - name: Install Playwright browser and OS dependencies for Storybook tests
         if: inputs.storybook_test_command != '' && runner.environment != 'github-hosted'
         timeout-minutes: 5
         shell: bash
-        run: pnpm exec playwright install --with-deps ${{ inputs.playwright_browser }}
+        env:
+          PLAYWRIGHT_BROWSER: ${{ inputs.playwright_browser }}
+        run: pnpm exec playwright install --with-deps "$PLAYWRIGHT_BROWSER"
         working-directory: ${{ inputs.working_directory }}
 
       - name: Run Storybook tests
