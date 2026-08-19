@@ -1,0 +1,136 @@
+name: Detect Changes
+
+# Decides which verification tracks a commit needs, so a backend-only change does
+# not pay for frontend verification and the reverse. Callers gate their jobs on
+# the two outputs.
+#
+# The `paths:` filter on a workflow trigger cannot do this: it is an OR across
+# every pattern, so one Go file starts the whole workflow, frontend jobs included.
+# Anchor paid ~2 billable minutes of frontend verification on 37% of its runs
+# (20 of 55 sampled, 2026-08-13..18) before this job existed.
+
+on:
+  workflow_call:
+    inputs:
+      backend_patterns:
+        description: >-
+          Newline-separated bash glob patterns matched against changed file
+          paths. An empty value reports the surface as unchanged.
+        required: false
+        default: ''
+        type: string
+      frontend_patterns:
+        description: Newline-separated bash glob patterns for the frontend surface
+        required: false
+        default: ''
+        type: string
+      runner:
+        description: Runner label
+        required: false
+        default: ubuntu-latest
+        type: string
+    outputs:
+      backend_changed:
+        description: '"true" when a changed file matched backend_patterns'
+        value: ${{ jobs.detect.outputs.backend_changed }}
+      frontend_changed:
+        description: '"true" when a changed file matched frontend_patterns'
+        value: ${{ jobs.detect.outputs.frontend_changed }}
+
+jobs:
+  detect:
+    name: Detect changed surfaces
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      backend_changed: ${{ steps.detect.outputs.backend_changed }}
+      frontend_changed: ${{ steps.detect.outputs.frontend_changed }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed surfaces
+        id: detect
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          BACKEND_PATTERNS: ${{ inputs.backend_patterns }}
+          FRONTEND_PATTERNS: ${{ inputs.frontend_patterns }}
+        run: |
+          set -euo pipefail
+
+          emit() {
+            echo "backend_changed=$1" >> "$GITHUB_OUTPUT"
+            echo "frontend_changed=$2" >> "$GITHUB_OUTPUT"
+            echo "backend_changed=$1 frontend_changed=$2"
+          }
+
+          # A manual run is when full verification is wanted most.
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then
+            emit true true
+            exit 0
+          fi
+
+          # Fetch only what the checkout missed. A force-push or a first push to a
+          # branch can leave the base commit absent even after fetch-depth 0.
+          have() { git cat-file -e "$1^{commit}" 2>/dev/null; }
+          for sha in "$BASE_SHA" "$HEAD_SHA"; do
+            [[ -z "$sha" || "$sha" =~ ^0+$ ]] && continue
+            have "$sha" || git fetch --no-tags origin "$sha" >/dev/null 2>&1 || true
+          done
+
+          # Fail open. A branch's first push reports an all-zero BASE_SHA, and a
+          # force-push or rewritten history can leave it unfetchable; there is no
+          # honest diff in either case. The earlier fallback here read the head
+          # commit with `git show --name-only`, which prints nothing at all for a
+          # merge commit — so every surface reported unchanged, every job skipped
+          # and ci-ok went green having verified nothing.
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! have "$BASE_SHA" || ! have "$HEAD_SHA"; then
+            echo "Cannot resolve a base commit to diff against — verifying every surface."
+            emit true true
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+
+          echo "::group::Changed files"
+          echo "$changed_files"
+          echo "::endgroup::"
+
+          # `[[ x == $pattern ]]` keeps the right side unquoted on purpose: that is
+          # what makes it a glob match rather than string equality. Inside `[[ ]]`
+          # a `*` also spans `/`, so `anchor-ui/**` reaches nested paths.
+          match_patterns() {
+            local patterns="$1" file='' pattern=''
+
+            while IFS= read -r file; do
+              [[ -z "$file" ]] && continue
+              while IFS= read -r pattern; do
+                [[ -z "$pattern" ]] && continue
+                # shellcheck disable=SC2053
+                if [[ "$file" == $pattern ]]; then
+                  echo "true"
+                  return
+                fi
+              done <<< "$patterns"
+            done <<< "$changed_files"
+
+            echo "false"
+          }
+
+          # A blank-but-present input is whitespace, not empty, so strip it before
+          # deciding whether the caller asked for this surface at all.
+          surface_changed() {
+            if [[ -z "${1//[$'\t\r\n ']/}" ]]; then
+              echo "false"
+            else
+              match_patterns "$1"
+            fi
+          }
+
+          emit "$(surface_changed "$BACKEND_PATTERNS")" "$(surface_changed "$FRONTEND_PATTERNS")"
