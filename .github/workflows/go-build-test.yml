@@ -40,6 +40,17 @@ on:
         required: false
         default: false
         type: boolean
+      lint_patched_build:
+        description: >-
+          Build golangci-lint from source with the Go 1.27 dependency fixes
+          instead of downloading the released binary. Set this when the module
+          declares or imports Go 1.27 generic methods, which the released
+          golangci-lint cannot analyse. Slower than the prebuilt path, because
+          it compiles the linter, and it does not use the lint cache. Prefer
+          this over skip_lint: it keeps the lint deploy gate.
+        required: false
+        default: false
+        type: boolean
       skip_lint:
         description: >-
           Skip the lint job entirely. Escape hatch for a caller whose code
@@ -133,12 +144,60 @@ jobs:
           go mod download
 
       - uses: golangci/golangci-lint-action@v9.3.0
+        if: ${{ !inputs.lint_patched_build }}
         with:
           version: latest
           working-directory: ${{ inputs.lint_working_directory }}
           args: ${{ inputs.lint_args }}
           skip-cache: ${{ inputs.lint_skip_cache }}
           skip-save-cache: ${{ inputs.lint_skip_save_cache }}
+
+      # Go 1.27 added generic methods. Two whole-program analysis layers that
+      # golangci-lint sits on assumed an instantiated type's method set could
+      # never contain an uninstantiated type parameter, which generic methods
+      # break. x/tools panics on the type parameter; honnef.co/go/tools loops
+      # in its own IR builder. Reading a dependency's export data fails too,
+      # so one import of an affected package takes down every dependent
+      # package, and the run still exits 1 with a single "could not import"
+      # line rather than failing loudly.
+      #
+      # Both upstreams have fixed it, but no golangci-lint release bundles
+      # both fixes yet, and Staticcheck has no stable release that supports
+      # Go 1.27 at all — its 2026.1 line reads export data version 2 and
+      # Go 1.27 emits version 4. So build the linter here with both pinned.
+      #
+      # The replace directives carry no version on the left, so they do not
+      # depend on the exact pseudo-version golangci-lint happens to require.
+      #
+      # Remove this whole path once a golangci-lint release ships
+      # x/tools >= v0.49.0 and honnef.co/go/tools >= 2026.2. See
+      # nanostack-dev/ci-workflows#14.
+      - name: Build golangci-lint with the Go 1.27 fixes
+        if: ${{ inputs.lint_patched_build }}
+        env:
+          GOLANGCI_LINT_VERSION: v2.12.2
+          X_TOOLS_VERSION: v0.49.0
+          STATICCHECK_VERSION: v0.8.0-rc.1
+        run: |
+          set -euo pipefail
+          build_dir="${RUNNER_TEMP}/golangci-lint-patched"
+          mkdir -p "${build_dir}"
+          cd "${build_dir}"
+          go mod init golangci-lint-patched
+          printf '//go:build tools\n\npackage tools\n\nimport _ "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"\n' > tools.go
+          go mod edit -require="github.com/golangci/golangci-lint/v2@${GOLANGCI_LINT_VERSION}"
+          go mod edit -replace="golang.org/x/tools=golang.org/x/tools@${X_TOOLS_VERSION}"
+          go mod edit -replace="honnef.co/go/tools=honnef.co/go/tools@${STATICCHECK_VERSION}"
+          go mod tidy
+          GOBIN="${RUNNER_TEMP}/golangci-lint-bin" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+          "${RUNNER_TEMP}/golangci-lint-bin/golangci-lint" version
+
+      - name: Run golangci-lint
+        if: ${{ inputs.lint_patched_build }}
+        working-directory: ${{ inputs.lint_working_directory }}
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/golangci-lint-bin/golangci-lint" run ${{ inputs.lint_args }}
 
   tests:
     name: Test ${{ inputs.app_name }} app
