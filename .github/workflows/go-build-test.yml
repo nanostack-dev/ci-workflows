@@ -116,15 +116,26 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
+      # Only cache the Go build and module caches on GitHub-hosted runners. A
+      # self-hosted runner keeps GOMODCACHE and GOCACHE between jobs already, so
+      # there is nothing to restore. actions/cache untars a multi-gigabyte
+      # archive over the module cache instead. Go marks module files read-only,
+      # so tar fails on every file that is already there, and the restore aborts.
+      # Measured on echopoint 2026-08-25: a 6.2 GB archive, ~9 minutes lost per
+      # job, ~58000 lines of `Cannot open: File exists` in the log, a false cache
+      # miss, and a post-job save that then loses the key race with the other job.
+      # Same reason the Playwright cache in frontend-verify.yml is host-gated.
       - uses: actions/setup-go@v6.4.0
         if: inputs.cache_dependency_path == ''
         with:
           go-version: ${{ inputs.go_version }}
+          cache: ${{ runner.environment == 'github-hosted' }}
 
       - uses: actions/setup-go@v6.4.0
         if: inputs.cache_dependency_path != ''
         with:
           go-version: ${{ inputs.go_version }}
+          cache: ${{ runner.environment == 'github-hosted' }}
           cache-dependency-path: ${{ inputs.cache_dependency_path }}
 
       - name: Download dependencies first
@@ -150,15 +161,26 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
+      # Only cache the Go build and module caches on GitHub-hosted runners. A
+      # self-hosted runner keeps GOMODCACHE and GOCACHE between jobs already, so
+      # there is nothing to restore. actions/cache untars a multi-gigabyte
+      # archive over the module cache instead. Go marks module files read-only,
+      # so tar fails on every file that is already there, and the restore aborts.
+      # Measured on echopoint 2026-08-25: a 6.2 GB archive, ~9 minutes lost per
+      # job, ~58000 lines of `Cannot open: File exists` in the log, a false cache
+      # miss, and a post-job save that then loses the key race with the other job.
+      # Same reason the Playwright cache in frontend-verify.yml is host-gated.
       - uses: actions/setup-go@v6.4.0
         if: inputs.cache_dependency_path == ''
         with:
           go-version: ${{ inputs.go_version }}
+          cache: ${{ runner.environment == 'github-hosted' }}
 
       - uses: actions/setup-go@v6.4.0
         if: inputs.cache_dependency_path != ''
         with:
           go-version: ${{ inputs.go_version }}
+          cache: ${{ runner.environment == 'github-hosted' }}
           cache-dependency-path: ${{ inputs.cache_dependency_path }}
 
       - name: Download dependencies first
