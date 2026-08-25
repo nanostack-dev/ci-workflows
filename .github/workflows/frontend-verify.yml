@@ -128,10 +128,15 @@ jobs:
           version: ${{ inputs.pnpm_version }}
           run_install: false
 
+      # Host-gated for the same reason as the Playwright cache below: a
+      # self-hosted runner keeps the pnpm store on disk between jobs, and pnpm
+      # marks the files in it read-only, so a cache restore would fail on every
+      # file that is already there. No caller passes a self-hosted runner today.
+      # This keeps that from becoming a 6 GB tar failure when one does.
       - uses: actions/setup-node@v6.4.0
         with:
           node-version: ${{ inputs.node_version }}
-          cache: pnpm
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
           cache-dependency-path: ${{ inputs.cache_dependency_path }}
 
       - name: Install frontend dependencies
