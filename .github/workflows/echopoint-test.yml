@@ -2,10 +2,9 @@ name: Echopoint Flow Tests
 
 # Reusable: run a tagged echopoint flow suite as a contract test.
 #
-# The test flows live in the PROD echopoint control plane (api.echopoint.dev);
-# the `environment` overlay points their requests at the target API (e.g. the
-# just-deployed dev API). A failing suite fails this job, so a broken deploy is
-# visible at the point it breaks rather than only in a caller's promotion gate.
+# `control_plane` selects the API that stores the flows; `environment` overlays
+# their variables to point requests at the target API. A failing suite fails
+# this job, so a broken deploy is visible at the caller's promotion gate.
 # The `outcome` output is still published for callers that inspect it directly.
 on:
   workflow_call:
@@ -18,6 +17,11 @@ on:
         description: Echopoint environment key overlaid on the flows (supplies their vars).
         required: false
         default: dev
+        type: string
+      control_plane:
+        description: Echopoint control plane that stores the flows (dev or prod).
+        required: false
+        default: prod
         type: string
       match_mode:
         description: 'Tag match mode: any (default) or all.'
@@ -59,14 +63,23 @@ jobs:
     outputs:
       outcome: ${{ steps.run.outcome }}
     steps:
+      - name: Validate control plane
+        env:
+          CONTROL_PLANE: ${{ inputs.control_plane }}
+        run: |
+          case "$CONTROL_PLANE" in
+            dev|prod) ;;
+            *) echo "::error::control_plane must be dev or prod" >&2; exit 1 ;;
+          esac
+
       - name: Load echopoint CI credentials from 1Password
         uses: 1password/load-secrets-action@v4
         with:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          ECHOPOINT_CI_API_KEY: op://Nanostack/infra-control-plane/ECHOPOINT_CI_API_KEY_PROD
-          ECHOPOINT_CI_ORG_ID: op://Nanostack/infra-control-plane/ECHOPOINT_CI_ORG_ID_PROD
+          ECHOPOINT_CI_API_KEY: op://Nanostack/infra-control-plane/${{ inputs.control_plane == 'dev' && 'ECHOPOINT_CI_API_KEY_DEV' || 'ECHOPOINT_CI_API_KEY_PROD' }}
+          ECHOPOINT_CI_ORG_ID: op://Nanostack/infra-control-plane/${{ inputs.control_plane == 'dev' && 'ECHOPOINT_CI_ORG_ID_DEV' || 'ECHOPOINT_CI_ORG_ID_PROD' }}
 
       - name: Run flow suite
         id: run
@@ -74,7 +87,7 @@ jobs:
         with:
           api-key: ${{ env.ECHOPOINT_CI_API_KEY }}
           organization-id: ${{ env.ECHOPOINT_CI_ORG_ID }}
-          api-url: https://api.echopoint.dev
+          api-url: ${{ inputs.control_plane == 'dev' && 'https://apidev.echopoint.dev' || 'https://api.echopoint.dev' }}
           tags: ${{ inputs.tag }}
           match-mode: ${{ inputs.match_mode }}
           environment: ${{ inputs.environment }}
