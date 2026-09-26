@@ -74,6 +74,15 @@ on:
         required: false
         default: ''
         type: string
+      storybook_test_shards:
+        description: >-
+          Splits the Storybook tests across this many parallel jobs, from 1 to 6.
+          At 1 they run inside the verify job. Above 1, each shard job appends
+          `--shard=<index>/<count>` to storybook_test_command, so the command must
+          end in a `vitest run` that takes the flag.
+        required: false
+        default: 1
+        type: number
       playwright_browser:
         description: Playwright browser installed when Storybook tests are enabled
         required: false
@@ -205,7 +214,7 @@ jobs:
       # restoring an archive over files that are present is pure overhead.
       - name: Resolve Playwright version
         id: playwright_version
-        if: inputs.storybook_test_command != '' && runner.environment == 'github-hosted'
+        if: inputs.storybook_test_command != '' && inputs.storybook_test_shards <= 1 && runner.environment == 'github-hosted'
         shell: bash
         working-directory: ${{ inputs.working_directory }}
         run: |
@@ -215,7 +224,7 @@ jobs:
           echo "Playwright $version"
 
       - name: Cache Playwright browsers
-        if: inputs.storybook_test_command != '' && runner.environment == 'github-hosted'
+        if: inputs.storybook_test_command != '' && inputs.storybook_test_shards <= 1 && runner.environment == 'github-hosted'
         uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/ms-playwright
@@ -239,7 +248,7 @@ jobs:
       # intermediate environment variable the preferred form: the value is read
       # as a variable instead of being pasted into the generated shell script.
       - name: Install Playwright browser for Storybook tests
-        if: inputs.storybook_test_command != '' && runner.environment == 'github-hosted'
+        if: inputs.storybook_test_command != '' && inputs.storybook_test_shards <= 1 && runner.environment == 'github-hosted'
         timeout-minutes: 5
         shell: bash
         env:
@@ -248,7 +257,7 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
 
       - name: Install Playwright browser and OS dependencies for Storybook tests
-        if: inputs.storybook_test_command != '' && runner.environment != 'github-hosted'
+        if: inputs.storybook_test_command != '' && inputs.storybook_test_shards <= 1 && runner.environment != 'github-hosted'
         timeout-minutes: 5
         shell: bash
         env:
@@ -257,10 +266,99 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
 
       - name: Run Storybook tests
-        if: inputs.storybook_test_command != ''
+        if: inputs.storybook_test_command != '' && inputs.storybook_test_shards <= 1
         # Below the job timeout so a hung run fails on this step with a clear
         # attribution instead of the whole job timing out anonymously.
         timeout-minutes: ${{ inputs.storybook_test_timeout_minutes }}
         shell: bash
         run: ${{ inputs.storybook_test_command }}
+        working-directory: ${{ inputs.working_directory }}
+
+  storybook_tests:
+    name: Storybook tests ${{ matrix.shard }}/${{ inputs.storybook_test_shards }}
+    if: inputs.storybook_test_command != '' && inputs.storybook_test_shards > 1
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON('[[1],[1],[1,2],[1,2,3],[1,2,3,4],[1,2,3,4,5],[1,2,3,4,5,6]]')[inputs.storybook_test_shards] }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Export build environment
+        if: inputs.build_env != ''
+        shell: bash
+        env:
+          BUILD_ENV_BLOCK: ${{ inputs.build_env }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$BUILD_ENV_BLOCK" >> "$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@v6.0.6
+        with:
+          version: ${{ inputs.pnpm_version }}
+          run_install: false
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: ${{ inputs.install_command }}
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Run frontend code generation
+        if: inputs.generate_command != ''
+        shell: bash
+        run: ${{ inputs.generate_command }}
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Resolve Playwright version
+        id: playwright_version
+        if: runner.environment == 'github-hosted'
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('playwright/package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Playwright $version"
+
+      - name: Cache Playwright browsers
+        if: runner.environment == 'github-hosted'
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright_version.outputs.version }}
+
+      - name: Install Playwright browser for Storybook tests
+        if: runner.environment == 'github-hosted'
+        timeout-minutes: 5
+        shell: bash
+        env:
+          PLAYWRIGHT_BROWSER: ${{ inputs.playwright_browser }}
+        run: pnpm exec playwright install "$PLAYWRIGHT_BROWSER"
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Install Playwright browser and OS dependencies for Storybook tests
+        if: runner.environment != 'github-hosted'
+        timeout-minutes: 5
+        shell: bash
+        env:
+          PLAYWRIGHT_BROWSER: ${{ inputs.playwright_browser }}
+        run: pnpm exec playwright install --with-deps "$PLAYWRIGHT_BROWSER"
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Run Storybook tests
+        timeout-minutes: ${{ inputs.storybook_test_timeout_minutes }}
+        shell: bash
+        env:
+          SHARD: ${{ matrix.shard }}/${{ inputs.storybook_test_shards }}
+        run: ${{ inputs.storybook_test_command }} --shard="$SHARD"
         working-directory: ${{ inputs.working_directory }}
