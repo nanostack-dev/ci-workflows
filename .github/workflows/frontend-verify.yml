@@ -360,5 +360,14 @@ jobs:
         shell: bash
         env:
           SHARD: ${{ matrix.shard }}/${{ inputs.storybook_test_shards }}
-        run: ${{ inputs.storybook_test_command }} --shard="$SHARD"
+        run: |
+          log="$(mktemp)"
+          if ${{ inputs.storybook_test_command }} --shard="$SHARD" 2>&1 | tee "$log"; then
+            exit 0
+          fi
+          if ! grep -q "Failed to fetch dynamically imported module" "$log"; then
+            exit 1
+          fi
+          echo "::warning::Retrying the shard once after a dynamic import failure"
+          ${{ inputs.storybook_test_command }} --shard="$SHARD"
         working-directory: ${{ inputs.working_directory }}
