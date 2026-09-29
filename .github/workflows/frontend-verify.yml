@@ -262,7 +262,7 @@ jobs:
         shell: bash
         env:
           PLAYWRIGHT_BROWSER: ${{ inputs.playwright_browser }}
-        run: pnpm exec playwright install --with-deps "$PLAYWRIGHT_BROWSER"
+        run: flock /tmp/playwright-apt.lock pnpm exec playwright install --with-deps "$PLAYWRIGHT_BROWSER"
         working-directory: ${{ inputs.working_directory }}
 
       - name: Run Storybook tests
@@ -352,7 +352,7 @@ jobs:
         shell: bash
         env:
           PLAYWRIGHT_BROWSER: ${{ inputs.playwright_browser }}
-        run: pnpm exec playwright install --with-deps "$PLAYWRIGHT_BROWSER"
+        run: flock /tmp/playwright-apt.lock pnpm exec playwright install --with-deps "$PLAYWRIGHT_BROWSER"
         working-directory: ${{ inputs.working_directory }}
 
       - name: Run Storybook tests
