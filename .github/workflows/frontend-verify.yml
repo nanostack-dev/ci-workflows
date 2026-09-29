@@ -101,6 +101,15 @@ on:
         required: false
         default: 20
         type: number
+      parallel_checks:
+        description: >-
+          Run lint, typecheck, test, build and the Storybook build at the same
+          time in one step instead of one after the other. Each command's output
+          is printed in its own group after all of them finish. Use it on a
+          runner with the CPU and memory for all of them at once.
+        required: false
+        default: false
+        type: boolean
       timeout_minutes:
         description: >-
           Job timeout. Guards against a hung browser-mode test run: vitest browser
@@ -180,32 +189,70 @@ jobs:
           git diff --exit-code -- "$GENERATED_PATH"
 
       - name: Lint frontend
-        if: inputs.lint_command != ''
+        if: ${{ !inputs.parallel_checks && inputs.lint_command != '' }}
         shell: bash
         run: ${{ inputs.lint_command }}
         working-directory: ${{ inputs.working_directory }}
 
       - name: Typecheck frontend
-        if: inputs.typecheck_command != ''
+        if: ${{ !inputs.parallel_checks && inputs.typecheck_command != '' }}
         shell: bash
         run: ${{ inputs.typecheck_command }}
         working-directory: ${{ inputs.working_directory }}
 
       - name: Test frontend
-        if: inputs.test_command != ''
+        if: ${{ !inputs.parallel_checks && inputs.test_command != '' }}
         shell: bash
         run: ${{ inputs.test_command }}
         working-directory: ${{ inputs.working_directory }}
 
       - name: Build frontend
+        if: ${{ !inputs.parallel_checks }}
         shell: bash
         run: ${{ inputs.build_command }}
         working-directory: ${{ inputs.working_directory }}
 
       - name: Build Storybook
-        if: inputs.storybook_build_command != ''
+        if: ${{ !inputs.parallel_checks && inputs.storybook_build_command != '' }}
         shell: bash
         run: ${{ inputs.storybook_build_command }}
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Lint, typecheck, test and build frontend in parallel
+        if: inputs.parallel_checks
+        shell: bash
+        env:
+          LINT_COMMAND: ${{ inputs.lint_command }}
+          TYPECHECK_COMMAND: ${{ inputs.typecheck_command }}
+          TEST_COMMAND: ${{ inputs.test_command }}
+          BUILD_COMMAND: ${{ inputs.build_command }}
+          STORYBOOK_BUILD_COMMAND: ${{ inputs.storybook_build_command }}
+        run: |
+          set -uo pipefail
+          logs="$(mktemp -d)"
+          declare -A pids
+          for check in LINT TYPECHECK TEST BUILD STORYBOOK_BUILD; do
+            command_var="${check}_COMMAND"
+            command="${!command_var}"
+            [[ -z "$command" ]] && continue
+            start=$SECONDS
+            ( bash -c "$command" > "$logs/$check.log" 2>&1; status=$?; echo "$((SECONDS - start))" > "$logs/$check.seconds"; exit "$status" ) &
+            pids[$check]=$!
+          done
+          failed=()
+          for check in "${!pids[@]}"; do
+            wait "${pids[$check]}" || failed+=("$check")
+          done
+          for check in LINT TYPECHECK TEST BUILD STORYBOOK_BUILD; do
+            [[ -f "$logs/$check.log" ]] || continue
+            echo "::group::$check ($(cat "$logs/$check.seconds")s)"
+            cat "$logs/$check.log"
+            echo "::endgroup::"
+          done
+          if (( ${#failed[@]} > 0 )); then
+            echo "::error::Failed: ${failed[*]}"
+            exit 1
+          fi
         working-directory: ${{ inputs.working_directory }}
 
       # The browser download is ~60s per run and the bytes never change for a given
