@@ -143,11 +143,17 @@ jobs:
           cd "${{ inputs.download_dependencies_dir }}"
           go mod download
 
+      # --allow-parallel-runners: golangci-lint takes a lock at
+      # `os.TempDir()/golangci-lint.lock` and exits 3 with "parallel
+      # golangci-lint is running" when it cannot get it within 5 s. On a
+      # self-hosted host every runner slot shares /tmp, so two lint jobs from
+      # different PRs collided (echopoint run 36771841893). The shared analysis
+      # cache is safe for concurrent processes, so the lock guards nothing here.
       - uses: golangci/golangci-lint-action@v9.3.0
         with:
           version: latest
           working-directory: ${{ inputs.lint_working_directory }}
-          args: ${{ inputs.lint_args }}
+          args: ${{ inputs.lint_args }} --allow-parallel-runners
           skip-cache: ${{ inputs.lint_skip_cache }}
           skip-save-cache: ${{ inputs.lint_skip_save_cache }}
 
