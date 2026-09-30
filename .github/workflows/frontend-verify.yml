@@ -312,13 +312,26 @@ jobs:
         run: flock /tmp/playwright-apt.lock pnpm exec playwright install --with-deps "$PLAYWRIGHT_BROWSER"
         working-directory: ${{ inputs.working_directory }}
 
+      # The watchdog lives next to this workflow, not in the caller, so check out
+      # this repository at the commit that defines the running job.
+      - name: Check out the Vitest watchdog
+        if: inputs.storybook_test_command != '' && inputs.storybook_test_shards <= 1
+        uses: actions/checkout@v6.0.2
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci-workflows
+          sparse-checkout: scripts/vitest-watchdog
+
       - name: Run Storybook tests
         if: inputs.storybook_test_command != '' && inputs.storybook_test_shards <= 1
         # Below the job timeout so a hung run fails on this step with a clear
         # attribution instead of the whole job timing out anonymously.
         timeout-minutes: ${{ inputs.storybook_test_timeout_minutes }}
         shell: bash
-        run: ${{ inputs.storybook_test_command }}
+        env:
+          VITEST_COMMAND: ${{ inputs.storybook_test_command }}
+        run: node "$GITHUB_WORKSPACE/.ci-workflows/scripts/vitest-watchdog/run.mjs"
         working-directory: ${{ inputs.working_directory }}
 
   storybook_tests:
@@ -402,19 +415,27 @@ jobs:
         run: flock /tmp/playwright-apt.lock pnpm exec playwright install --with-deps "$PLAYWRIGHT_BROWSER"
         working-directory: ${{ inputs.working_directory }}
 
+      # The watchdog lives next to this workflow, not in the caller, so check out
+      # this repository at the commit that defines the running job.
+      - name: Check out the Vitest watchdog
+        uses: actions/checkout@v6.0.2
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci-workflows
+          sparse-checkout: scripts/vitest-watchdog
+
+      # A browser-mode file can stall while loading, with no Vitest timeout to
+      # end it (9 shards hung until the step timeout on 2026-09-30), or fail with
+      # "Failed to fetch dynamically imported module" although its tests pass.
+      # The watchdog kills a run after 60 s without a test file event and runs
+      # the unfinished and import-failed files once more. See
+      # scripts/vitest-watchdog/run.mjs.
       - name: Run Storybook tests
         timeout-minutes: ${{ inputs.storybook_test_timeout_minutes }}
         shell: bash
         env:
-          SHARD: ${{ matrix.shard }}/${{ inputs.storybook_test_shards }}
-        run: |
-          log="$(mktemp)"
-          if ${{ inputs.storybook_test_command }} --shard="$SHARD" 2>&1 | tee "$log"; then
-            exit 0
-          fi
-          if ! grep -q "Failed to fetch dynamically imported module" "$log"; then
-            exit 1
-          fi
-          echo "::warning::Retrying the shard once after a dynamic import failure"
-          ${{ inputs.storybook_test_command }} --shard="$SHARD"
+          VITEST_COMMAND: ${{ inputs.storybook_test_command }}
+          VITEST_SHARD: ${{ matrix.shard }}/${{ inputs.storybook_test_shards }}
+        run: node "$GITHUB_WORKSPACE/.ci-workflows/scripts/vitest-watchdog/run.mjs"
         working-directory: ${{ inputs.working_directory }}
