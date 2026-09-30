@@ -8,8 +8,8 @@
 //
 // This script kills a run once no test file event has happened for
 // VITEST_STALL_SECONDS, then runs the files that never finished, plus the files
-// that failed with the dynamic import error, one more time. A file that fails
-// its tests is never run again, so a real failure still fails the step.
+// that failed with the dynamic import error, again, at most twice. A file that
+// fails its tests is never run again, so a real failure still fails the step.
 //
 // Environment:
 //   VITEST_COMMAND       command that ends in `vitest run`, e.g. `pnpm test-storybook`
@@ -66,7 +66,9 @@ async function attempt(label, extraArgs) {
   const child = spawn("bash", ["-c", commandLine], {
     detached: true,
     stdio: "inherit",
-    env: { ...process.env, VITEST_WATCHDOG_PROGRESS: progressFile },
+    // VITEST_PW_DEBUG makes @vitest/browser-playwright log each failed browser
+    // request with Chrome's net:: error, the only record of why an import failed.
+    env: { VITEST_PW_DEBUG: "1", ...process.env, VITEST_WATCHDOG_PROGRESS: progressFile },
   })
   const exited = new Promise((resolve) => child.on("exit", (code, signal) => resolve(code ?? (signal ? 1 : 0))))
 
@@ -120,25 +122,28 @@ async function attempt(label, extraArgs) {
   }
 }
 
-const first = await attempt("run 1", shard ? [`--shard=${quote(shard)}`] : [])
-if (first.passed) process.exit(0)
-
-// Only a stall or a dynamic import failure is retried. An unhandled error blocks
-// the retry unless it came from a file that runs again: the network failure that
-// breaks a module import also breaks MSW's service worker registration in that
-// file. Anything else, including a run that failed before it listed its files,
-// fails the step as it is.
-const isRetried = (file) => file !== null && first.retryable.some((retried) => retried === file || retried.endsWith(`/${file}`))
-if (
-  !first.started ||
-  first.testFailures.length > 0 ||
-  !first.unhandledErrorFiles.every(isRetried) ||
-  first.retryable.length === 0
-) {
-  process.exit(1)
+// Only a stall or a dynamic import failure is retried, at most twice: on
+// 2026-09-30 three files hit the import failure twice in a row, one second
+// apart. An unhandled error blocks the retry unless it came from a file that
+// runs again: the network failure that breaks a module import also breaks
+// MSW's service worker registration in that file. Anything else, including a
+// run that failed before it listed its files, fails the step as it is.
+function retryableFiles(result) {
+  const isRetried = (file) => file !== null && result.retryable.some((retried) => retried === file || retried.endsWith(`/${file}`))
+  const retry =
+    result.started &&
+    result.testFailures.length === 0 &&
+    result.unhandledErrorFiles.every(isRetried) &&
+    result.retryable.length > 0
+  return retry ? result.retryable.map(relative) : []
 }
 
-const files = first.retryable.map(relative)
-console.log(`::warning::Running ${files.length} test file(s) again after a stall or a dynamic import failure: ${files.join(", ")}`)
-const second = await attempt("run 2", files.map(quote))
-process.exit(second.passed ? 0 : 1)
+const maxRuns = 3
+let result = await attempt("run 1", shard ? [`--shard=${quote(shard)}`] : [])
+for (let run = 2; !result.passed && run <= maxRuns; run++) {
+  const files = retryableFiles(result)
+  if (files.length === 0) break
+  console.log(`::warning::Running ${files.length} test file(s) again after a stall or a dynamic import failure: ${files.join(", ")}`)
+  result = await attempt(`run ${run}`, files.map(quote))
+}
+process.exit(result.passed ? 0 : 1)
