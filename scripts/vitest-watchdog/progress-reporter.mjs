@@ -43,7 +43,8 @@ export default class WatchdogProgressReporter {
     })
   }
 
+  // Vitest tags an unhandled error with the file it came from, when it knows.
   onTestRunEnd(_testModules, unhandledErrors, reason) {
-    write({ event: "run-end", reason, unhandledErrors: unhandledErrors.length })
+    write({ event: "run-end", reason, unhandledErrorFiles: unhandledErrors.map((error) => error.VITEST_TEST_PATH ?? null) })
   }
 }

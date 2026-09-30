@@ -113,9 +113,9 @@ async function attempt(label, extraArgs) {
 
   return {
     started: files.length > 0,
-    passed: verdict === "lingered" ? runEnd.reason === "passed" && runEnd.unhandledErrors === 0 : exitCode === 0,
+    passed: verdict === "lingered" ? runEnd.reason === "passed" && runEnd.unhandledErrorFiles.length === 0 : exitCode === 0,
     testFailures: [...ended.values()].filter((event) => event.state === "failed" && !event.importFailed).map((event) => event.file),
-    unhandledErrors: runEnd?.unhandledErrors ?? 0,
+    unhandledErrorFiles: runEnd?.unhandledErrorFiles ?? [],
     retryable: files.filter((file) => !ended.has(file) || ended.get(file).importFailed),
   }
 }
@@ -123,9 +123,18 @@ async function attempt(label, extraArgs) {
 const first = await attempt("run 1", shard ? [`--shard=${quote(shard)}`] : [])
 if (first.passed) process.exit(0)
 
-// Only a stall or a dynamic import failure is retried. Anything else, including
-// a run that failed before it listed its files, fails the step as it is.
-if (!first.started || first.testFailures.length > 0 || first.unhandledErrors > 0 || first.retryable.length === 0) {
+// Only a stall or a dynamic import failure is retried. An unhandled error blocks
+// the retry unless it came from a file that runs again: the network failure that
+// breaks a module import also breaks MSW's service worker registration in that
+// file. Anything else, including a run that failed before it listed its files,
+// fails the step as it is.
+const isRetried = (file) => file !== null && first.retryable.some((retried) => retried === file || retried.endsWith(`/${file}`))
+if (
+  !first.started ||
+  first.testFailures.length > 0 ||
+  !first.unhandledErrorFiles.every(isRetried) ||
+  first.retryable.length === 0
+) {
   process.exit(1)
 }
 
