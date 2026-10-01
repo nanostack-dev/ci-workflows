@@ -425,12 +425,16 @@ jobs:
           path: .ci-workflows
           sparse-checkout: scripts/vitest-watchdog
 
-      # A browser-mode file can stall while loading, with no Vitest timeout to
-      # end it (9 shards hung until the step timeout on 2026-09-30), or fail with
-      # "Failed to fetch dynamically imported module" although its tests pass.
-      # The watchdog kills a run after 60 s without a test file event and runs
-      # the unfinished and import-failed files again, at most twice. See
-      # scripts/vitest-watchdog/run.mjs.
+      # Docker on a self-hosted host adds and removes veth interfaces all the
+      # time, and Chrome aborts in-flight requests on every address change
+      # (net::ERR_NETWORK_CHANGED), localhost included. A file whose module
+      # load was aborted either fails with "Failed to fetch dynamically
+      # imported module" or never finishes. 9 shards hung until the step
+      # timeout on 2026-09-30. The runner script starts Vitest in a private
+      # network namespace with loopback only, so Chrome never sees those
+      # changes. Its watchdog also kills a run after 60 s without a test file
+      # event and runs the unfinished and import-failed files again, at most
+      # twice. See scripts/vitest-watchdog/run.mjs.
       - name: Run Storybook tests
         timeout-minutes: ${{ inputs.storybook_test_timeout_minutes }}
         shell: bash

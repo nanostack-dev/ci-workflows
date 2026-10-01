@@ -1,4 +1,14 @@
-// Runs a Vitest browser-mode command under a watchdog.
+// Runs a Vitest browser-mode command in a private network namespace, under a
+// watchdog.
+//
+// On Linux, Chrome treats any address change on the host as a network change and
+// aborts its in-flight requests with net::ERR_NETWORK_CHANGED, requests to
+// localhost included. On a self-hosted runner, Docker adds and removes veth
+// interfaces whenever a test container or an image build step starts or stops
+// (634 on 1340p on 2026-09-30). In a private network namespace that holds only
+// loopback, Vitest, its Vite server and Chrome never see those changes. Where
+// the host does not allow an unprivileged namespace (GitHub-hosted Ubuntu
+// restricts them), the command runs directly.
 //
 // Vitest has no timeout on loading a test file into a browser tab. When a module
 // request never gets an answer, the file stays in flight forever, the other tabs
@@ -15,7 +25,8 @@
 //   VITEST_COMMAND       command that ends in `vitest run`, e.g. `pnpm test-storybook`
 //   VITEST_SHARD         optional `<index>/<count>`, appended as --shard on the first run
 //   VITEST_STALL_SECONDS optional, default 60
-import { spawn } from "node:child_process"
+//   VITEST_NETWORK_ISOLATION optional, `0` runs on the host network
+import { spawn, spawnSync } from "node:child_process"
 import { existsSync, mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -33,6 +44,19 @@ if (!command) {
   console.error("VITEST_COMMAND is not set")
   process.exit(2)
 }
+
+// `unshare -rn` maps the current user to root in a new user namespace, which may
+// create a network namespace. Its loopback interface starts down.
+const isolate = ["unshare", "--map-root-user", "--net", "bash", "-c", 'ip link set lo up && exec bash -c "$1"', "bash"]
+const canIsolate =
+  process.platform === "linux" &&
+  process.env.VITEST_NETWORK_ISOLATION !== "0" &&
+  spawnSync(isolate[0], [...isolate.slice(1), "true"], { stdio: "ignore" }).status === 0
+console.log(
+  canIsolate
+    ? "[watchdog] running in a private network namespace (loopback only)"
+    : "[watchdog] private network namespace not available, running on the host network",
+)
 
 const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`
 const relative = (file) => path.relative(process.cwd(), file)
@@ -63,7 +87,8 @@ async function attempt(label, extraArgs) {
   const startedAt = Date.now()
   // detached puts vitest and everything it spawns in one process group, so a
   // stalled run can be killed whole.
-  const child = spawn("bash", ["-c", commandLine], {
+  const [file, ...spawnArgs] = canIsolate ? [...isolate, commandLine] : ["bash", "-c", commandLine]
+  const child = spawn(file, spawnArgs, {
     detached: true,
     stdio: "inherit",
     // VITEST_PW_DEBUG makes @vitest/browser-playwright log each failed browser
