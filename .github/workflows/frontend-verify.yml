@@ -83,6 +83,17 @@ on:
         required: false
         default: 1
         type: number
+      storybook_test_affected_only:
+        description: >-
+          On a pull_request event, run only the story files whose imports reach a
+          file the pull request changes. Appends `--changed=HEAD~1 --passWithNoTests`
+          to storybook_test_command; HEAD~1 is the base side of the merge commit
+          GitHub checks out. Other events run every file. The caller's Vitest
+          config must list the files that reach every story without an import
+          (Storybook preview, global CSS, the lockfile) in forceRerunTriggers.
+        required: false
+        default: false
+        type: boolean
       playwright_browser:
         description: Playwright browser installed when Storybook tests are enabled
         required: false
@@ -131,6 +142,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6.0.2
+        with:
+          # Affected-only Storybook tests diff against the merge commit's parent.
+          fetch-depth: ${{ inputs.storybook_test_affected_only && github.event_name == 'pull_request' && 2 || 1 }}
 
       - name: Export build environment
         if: inputs.build_env != ''
@@ -330,7 +344,7 @@ jobs:
         timeout-minutes: ${{ inputs.storybook_test_timeout_minutes }}
         shell: bash
         env:
-          VITEST_COMMAND: ${{ inputs.storybook_test_command }}
+          VITEST_COMMAND: ${{ inputs.storybook_test_command }}${{ inputs.storybook_test_affected_only && github.event_name == 'pull_request' && ' --changed=HEAD~1 --passWithNoTests' || '' }}
         run: node "$GITHUB_WORKSPACE/.ci-workflows/scripts/vitest-watchdog/run.mjs"
         working-directory: ${{ inputs.working_directory }}
 
@@ -347,6 +361,9 @@ jobs:
         shard: ${{ fromJSON('[[1],[1],[1,2],[1,2,3],[1,2,3,4],[1,2,3,4,5],[1,2,3,4,5,6]]')[inputs.storybook_test_shards] }}
     steps:
       - uses: actions/checkout@v6.0.2
+        with:
+          # Affected-only Storybook tests diff against the merge commit's parent.
+          fetch-depth: ${{ inputs.storybook_test_affected_only && github.event_name == 'pull_request' && 2 || 1 }}
 
       - name: Export build environment
         if: inputs.build_env != ''
@@ -439,7 +456,7 @@ jobs:
         timeout-minutes: ${{ inputs.storybook_test_timeout_minutes }}
         shell: bash
         env:
-          VITEST_COMMAND: ${{ inputs.storybook_test_command }}
+          VITEST_COMMAND: ${{ inputs.storybook_test_command }}${{ inputs.storybook_test_affected_only && github.event_name == 'pull_request' && ' --changed=HEAD~1 --passWithNoTests' || '' }}
           VITEST_SHARD: ${{ matrix.shard }}/${{ inputs.storybook_test_shards }}
         run: node "$GITHUB_WORKSPACE/.ci-workflows/scripts/vitest-watchdog/run.mjs"
         working-directory: ${{ inputs.working_directory }}
