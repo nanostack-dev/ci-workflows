@@ -83,6 +83,33 @@ on:
         required: false
         default: 1
         type: number
+      storybook_test_affected_only:
+        description: >-
+          On a pull_request event, run only the story files whose imports reach a
+          file the pull request changes. Appends `--changed=HEAD~1 --passWithNoTests`
+          to storybook_test_command; HEAD~1 is the base side of the merge commit
+          GitHub checks out. Other events run every file. The caller's Vitest
+          config must list the files that reach every story without an import
+          (Storybook preview, global CSS, the lockfile) in forceRerunTriggers.
+        required: false
+        default: false
+        type: boolean
+      storybook_test_list_command:
+        description: >-
+          Optional. Lists the Storybook test files without running them, for
+          example `pnpm exec vitest list --config vitest.workspace.ts --filesOnly`.
+          With storybook_test_affected_only on a pull_request event, a plan job
+          runs it with `--changed=HEAD~1` and starts one shard per
+          storybook_test_files_per_shard affected files, at most
+          storybook_test_shards, or none when nothing is affected.
+        required: false
+        default: ''
+        type: string
+      storybook_test_files_per_shard:
+        description: Affected story files per shard when the plan job sizes the shards.
+        required: false
+        default: 20
+        type: number
       playwright_browser:
         description: Playwright browser installed when Storybook tests are enabled
         required: false
@@ -131,6 +158,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6.0.2
+        with:
+          # Affected-only Storybook tests diff against the merge commit's parent.
+          fetch-depth: ${{ inputs.storybook_test_affected_only && github.event_name == 'pull_request' && 2 || 1 }}
 
       - name: Export build environment
         if: inputs.build_env != ''
@@ -330,13 +360,81 @@ jobs:
         timeout-minutes: ${{ inputs.storybook_test_timeout_minutes }}
         shell: bash
         env:
-          VITEST_COMMAND: ${{ inputs.storybook_test_command }}
+          VITEST_COMMAND: ${{ inputs.storybook_test_command }}${{ inputs.storybook_test_affected_only && github.event_name == 'pull_request' && ' --changed=HEAD~1 --passWithNoTests' || '' }}
         run: node "$GITHUB_WORKSPACE/.ci-workflows/scripts/vitest-watchdog/run.mjs"
         working-directory: ${{ inputs.working_directory }}
 
+  # Sizes the Storybook shards of a pull request to what it affects, so a change
+  # to one component does not hold three runner slots, two of them for nothing.
+  storybook_plan:
+    name: Plan Storybook tests
+    if: >-
+      inputs.storybook_test_command != '' && inputs.storybook_test_shards > 1 &&
+      inputs.storybook_test_affected_only && inputs.storybook_test_list_command != '' &&
+      github.event_name == 'pull_request'
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 2
+
+      - name: Export build environment
+        if: inputs.build_env != ''
+        shell: bash
+        env:
+          BUILD_ENV_BLOCK: ${{ inputs.build_env }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$BUILD_ENV_BLOCK" >> "$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@v6.0.6
+        with:
+          version: ${{ inputs.pnpm_version }}
+          run_install: false
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
+          cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: ${{ inputs.install_command }}
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Count affected story files
+        id: plan
+        shell: bash
+        env:
+          LIST_COMMAND: ${{ inputs.storybook_test_list_command }}
+          MAX_SHARDS: ${{ inputs.storybook_test_shards }}
+          FILES_PER_SHARD: ${{ inputs.storybook_test_files_per_shard }}
+        run: |
+          set -euo pipefail
+          list="$(mktemp)"
+          bash -c "$LIST_COMMAND --changed=HEAD~1 --json=$list"
+          files="$(node -p "JSON.parse(require('fs').readFileSync('$list', 'utf8')).length")"
+          shards=$(( (files + FILES_PER_SHARD - 1) / FILES_PER_SHARD ))
+          shards=$(( shards > MAX_SHARDS ? MAX_SHARDS : shards ))
+          echo "$files affected story file(s), $shards shard(s)"
+          echo "shards=$shards" >> "$GITHUB_OUTPUT"
+        working-directory: ${{ inputs.working_directory }}
+
   storybook_tests:
-    name: Storybook tests ${{ matrix.shard }}/${{ inputs.storybook_test_shards }}
-    if: inputs.storybook_test_command != '' && inputs.storybook_test_shards > 1
+    name: Storybook tests ${{ matrix.shard }}/${{ needs.storybook_plan.outputs.shards || inputs.storybook_test_shards }}
+    needs: storybook_plan
+    # Runs without a plan (push events, or no list command) or when the plan
+    # found something to run. !cancelled() lets it start after a skipped plan.
+    if: >-
+      !cancelled() && inputs.storybook_test_command != '' && inputs.storybook_test_shards > 1 &&
+      (needs.storybook_plan.result == 'skipped' ||
+      (needs.storybook_plan.result == 'success' && needs.storybook_plan.outputs.shards != '0'))
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
     permissions:
@@ -344,9 +442,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON('[[1],[1],[1,2],[1,2,3],[1,2,3,4],[1,2,3,4,5],[1,2,3,4,5,6]]')[inputs.storybook_test_shards] }}
+        shard: ${{ fromJSON('[[1],[1],[1,2],[1,2,3],[1,2,3,4],[1,2,3,4,5],[1,2,3,4,5,6]]')[fromJSON(needs.storybook_plan.outputs.shards || inputs.storybook_test_shards)] }}
     steps:
       - uses: actions/checkout@v6.0.2
+        with:
+          # Affected-only Storybook tests diff against the merge commit's parent.
+          fetch-depth: ${{ inputs.storybook_test_affected_only && github.event_name == 'pull_request' && 2 || 1 }}
 
       - name: Export build environment
         if: inputs.build_env != ''
@@ -439,7 +540,7 @@ jobs:
         timeout-minutes: ${{ inputs.storybook_test_timeout_minutes }}
         shell: bash
         env:
-          VITEST_COMMAND: ${{ inputs.storybook_test_command }}
-          VITEST_SHARD: ${{ matrix.shard }}/${{ inputs.storybook_test_shards }}
+          VITEST_COMMAND: ${{ inputs.storybook_test_command }}${{ inputs.storybook_test_affected_only && github.event_name == 'pull_request' && ' --changed=HEAD~1 --passWithNoTests' || '' }}
+          VITEST_SHARD: ${{ matrix.shard }}/${{ needs.storybook_plan.outputs.shards || inputs.storybook_test_shards }}
         run: node "$GITHUB_WORKSPACE/.ci-workflows/scripts/vitest-watchdog/run.mjs"
         working-directory: ${{ inputs.working_directory }}
