@@ -2,6 +2,8 @@
 
 Public-safe reusable GitHub Actions workflows for Nanostack application CI.
 
+Start with [AGENTS.md](AGENTS.md), [CONTEXT.md](CONTEXT.md) and [the documentation index](docs/README.md) for standalone maintenance, validation and consumer rollout.
+
 This repo is intended to contain only verification and build workflows such as:
 
 - frontend verify

@@ -1,3 +1,6 @@
 
 # Agent worktrees, created by git worktree add
 worktrees/
+
+# Developer-specific agent permissions and settings.
+/.claude/settings.local.json
