@@ -40,12 +40,10 @@ on:
         type: string
       cli_version:
         description: >-
-          echopoint CLI version to use. Pinned, not latest: CLI 2.3.0 returns
-          about 1.9 MB of results JSON, over GitHub's 1 MB output limit, and
-          failed the post-deploy flow suite (infra run 38486051126). Bump it
-          once the action caps its output, and respect the 7-day cooldown.
+          echopoint CLI version to use. Our own CLI, so it tracks the latest
+          release (no pin or cooldown).
         required: false
-        default: v2.0.5
+        default: latest
         type: string
       runner:
         description: Runner label for all jobs (private-repo CI passes nanostack-dev for the self-hosted runners)
@@ -87,7 +85,8 @@ jobs:
 
       - name: Run flow suite
         id: run
-        uses: nanostack-dev/echopoint-cli@4692917565840bd1646fb85265f638a533da813d # v1 as of 2026-10-12, last known good
+        # Our own action: it follows the floating v1 tag, not a SHA pin.
+        uses: nanostack-dev/echopoint-cli@v1
         with:
           api-key: ${{ env.ECHOPOINT_CI_API_KEY }}
           organization-id: ${{ env.ECHOPOINT_CI_ORG_ID }}
