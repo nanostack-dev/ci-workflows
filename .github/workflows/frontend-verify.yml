@@ -157,7 +157,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           # Affected-only Storybook tests diff against the merge commit's parent.
           fetch-depth: ${{ inputs.storybook_test_affected_only && github.event_name == 'pull_request' && 2 || 1 }}
@@ -171,7 +171,7 @@ jobs:
           set -euo pipefail
           printf '%s\n' "$BUILD_ENV_BLOCK" >> "$GITHUB_ENV"
 
-      - uses: pnpm/action-setup@v6.0.6
+      - uses: pnpm/action-setup@91ab88e2619ed1f46221f0ba42d1492c02baf788 # v6.0.6
         with:
           version: ${{ inputs.pnpm_version }}
           run_install: false
@@ -181,7 +181,7 @@ jobs:
       # marks the files in it read-only, so a cache restore would fail on every
       # file that is already there. No caller passes a self-hosted runner today.
       # This keeps that from becoming a 6 GB tar failure when one does.
-      - uses: actions/setup-node@v6.4.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ inputs.node_version }}
           cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
@@ -302,7 +302,7 @@ jobs:
 
       - name: Cache Playwright browsers
         if: inputs.storybook_test_command != '' && inputs.storybook_test_shards <= 1 && runner.environment == 'github-hosted'
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ steps.playwright_version.outputs.version }}
@@ -346,7 +346,7 @@ jobs:
       # this repository at the commit that defines the running job.
       - name: Check out the Vitest watchdog
         if: inputs.storybook_test_command != '' && inputs.storybook_test_shards <= 1
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -379,7 +379,7 @@ jobs:
     outputs:
       shards: ${{ steps.plan.outputs.shards }}
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 2
 
@@ -392,12 +392,12 @@ jobs:
           set -euo pipefail
           printf '%s\n' "$BUILD_ENV_BLOCK" >> "$GITHUB_ENV"
 
-      - uses: pnpm/action-setup@v6.0.6
+      - uses: pnpm/action-setup@91ab88e2619ed1f46221f0ba42d1492c02baf788 # v6.0.6
         with:
           version: ${{ inputs.pnpm_version }}
           run_install: false
 
-      - uses: actions/setup-node@v6.4.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ inputs.node_version }}
           cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
@@ -444,7 +444,7 @@ jobs:
       matrix:
         shard: ${{ fromJSON('[[1],[1],[1,2],[1,2,3],[1,2,3,4],[1,2,3,4,5],[1,2,3,4,5,6]]')[fromJSON(needs.storybook_plan.outputs.shards || inputs.storybook_test_shards)] }}
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           # Affected-only Storybook tests diff against the merge commit's parent.
           fetch-depth: ${{ inputs.storybook_test_affected_only && github.event_name == 'pull_request' && 2 || 1 }}
@@ -458,12 +458,12 @@ jobs:
           set -euo pipefail
           printf '%s\n' "$BUILD_ENV_BLOCK" >> "$GITHUB_ENV"
 
-      - uses: pnpm/action-setup@v6.0.6
+      - uses: pnpm/action-setup@91ab88e2619ed1f46221f0ba42d1492c02baf788 # v6.0.6
         with:
           version: ${{ inputs.pnpm_version }}
           run_install: false
 
-      - uses: actions/setup-node@v6.4.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ inputs.node_version }}
           cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
@@ -493,7 +493,7 @@ jobs:
 
       - name: Cache Playwright browsers
         if: runner.environment == 'github-hosted'
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ steps.playwright_version.outputs.version }}
@@ -519,7 +519,7 @@ jobs:
       # The watchdog lives next to this workflow, not in the caller, so check out
       # this repository at the commit that defines the running job.
       - name: Check out the Vitest watchdog
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}

@@ -73,7 +73,7 @@ jobs:
           esac
 
       - name: Load echopoint CI credentials from 1Password
-        uses: 1password/load-secrets-action@v4
+        uses: 1password/load-secrets-action@eb2efd0703da22a93c467f2d1ffbb6826c11e19c # v4 (resolved 2026-10-13)
         with:
           export-env: true
         env:
