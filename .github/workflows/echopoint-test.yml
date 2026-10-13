@@ -45,7 +45,7 @@ on:
           failed the post-deploy flow suite (infra run 38486051126). Bump it
           once the action caps its output, and respect the 7-day cooldown.
         required: false
-        default: 2.0.5
+        default: v2.0.5
         type: string
       runner:
         description: Runner label for all jobs (private-repo CI passes nanostack-dev for the self-hosted runners)
