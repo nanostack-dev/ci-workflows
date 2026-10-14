@@ -90,6 +90,15 @@ on:
         required: false
         default: true
         type: boolean
+      build_image_alongside_tests:
+        description: >-
+          Build and push the image while the tests run instead of after them.
+          Saves the build time on the critical path; a commit whose tests fail
+          still gets an image tag in the registry, so the caller must gate any
+          deploy on this workflow's result (not on the image existing).
+        required: false
+        default: false
+        type: boolean
       runner:
         description: Runner label for all jobs (private-repo CI passes nanostack-dev for the self-hosted runners)
         required: false
@@ -106,7 +115,7 @@ on:
     outputs:
       deploy_image_tag:
         description: Image tag resolved for downstream deploy workflows
-        value: ${{ jobs.docker-push.outputs.deploy_image_tag }}
+        value: ${{ jobs.docker-push.outputs.deploy_image_tag || jobs.docker-push-early.outputs.deploy_image_tag }}
 jobs:
   lint:
     name: Lint ${{ inputs.app_name }} app
@@ -234,15 +243,16 @@ jobs:
     timeout-minutes: ${{ inputs.timeout_minutes }}
     # Gate the image on tests only — it must reflect tested code. Lint runs in
     # parallel and still fails the overall workflow (gating deploy) on its own.
+    # With build_image_alongside_tests, docker-push-early below runs instead.
     needs: tests
-    if: inputs.publish_image
+    if: inputs.publish_image && !inputs.build_image_alongside_tests
     outputs:
       deploy_image_tag: ${{ steps.deploy_tag.outputs.deploy_image_tag }}
     permissions:
       contents: read
       packages: write
       id-token: write
-    steps:
+    steps: &docker_push_steps
       # Default shallow checkout — the build needs no git history (version/sha
       # come from build-args/metadata-action, not git log).
       - name: Checkout repository
@@ -370,3 +380,20 @@ jobs:
           name: deploy-metadata
           path: deploy-metadata.env
           if-no-files-found: error
+
+  # The same image job without waiting for the tests (build_image_alongside_tests).
+  # Same name and steps (YAML alias), so exactly one "Build and Push Container
+  # Image" check runs either way. Deploys must still be gated on the whole
+  # workflow, which fails when the tests fail.
+  docker-push-early:
+    name: Build and Push Container Image
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    if: inputs.publish_image && inputs.build_image_alongside_tests
+    outputs:
+      deploy_image_tag: ${{ steps.deploy_tag.outputs.deploy_image_tag }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps: *docker_push_steps
