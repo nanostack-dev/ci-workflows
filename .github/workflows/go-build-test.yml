@@ -30,6 +30,11 @@ on:
         required: false
         default: --timeout 5m
         type: string
+      lint_version_file:
+        description: Exact golangci-lint version file, relative to lint_working_directory; empty keeps latest
+        required: false
+        default: ""
+        type: string
       lint_skip_cache:
         description: Skip golangci-lint cache
         required: false
@@ -160,7 +165,8 @@ jobs:
       # cache is safe for concurrent processes, so the lock guards nothing here.
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: latest
+          version: ${{ inputs.lint_version_file == '' && 'latest' || '' }}
+          version-file: ${{ inputs.lint_version_file }}
           working-directory: ${{ inputs.lint_working_directory }}
           args: ${{ inputs.lint_args }} --allow-parallel-runners
           skip-cache: ${{ inputs.lint_skip_cache }}
