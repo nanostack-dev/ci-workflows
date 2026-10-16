@@ -1,0 +1,4 @@
+-- expect-custom: none
+-- REFRESH ... CONCURRENTLY runs inside a transaction block.
+REFRESH MATERIALIZED VIEW CONCURRENTLY mv_a;
+REFRESH MATERIALIZED VIEW CONCURRENTLY mv_b;
