@@ -147,6 +147,35 @@ for _p in case_files():
     setattr(SquawkTests, _name, _make_squawk_test(_p))
 
 
+class FileFormatTests(unittest.TestCase):
+    """Windows line endings and a byte order mark must not hide a statement."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="migration-lint-test-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def lint(self, data):
+        path = os.path.join(self.tmp, "000009_x.up.sql")
+        with open(path, "wb") as fh:
+            fh.write(data)
+        return subprocess.run(
+            [sys.executable, "-I", SCRIPT, "--migrations-dir", self.tmp, "--no-squawk", "--files", path],
+            capture_output=True, text=True)
+
+    def test_byte_order_mark(self):
+        r = self.lint("\ufeffDELETE FROM webhooks;\n".encode("utf-8"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("[unbounded-delete]", r.stdout)
+
+    def test_crlf_line_endings(self):
+        r = self.lint(b"-- header\r\nSELECT 1;\r\nDELETE FROM webhooks;\r\n")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertRegex(r.stdout, r"000009_x\.up\.sql:3: error: \[unbounded-delete\]")
+
+    def test_empty_file(self):
+        self.assertEqual(self.lint(b"").returncode, 0)
+
+
 class GitDiffTests(unittest.TestCase):
     """The script lints what a change adds or modifies, not the history."""
 

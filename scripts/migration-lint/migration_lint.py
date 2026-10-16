@@ -552,7 +552,7 @@ def collect_hypertables(directory: str, extra: Iterable[str]) -> Set[str]:
         for f in sorted(files):
             if not f.endswith(".sql") or f.endswith(".down.sql"):
                 continue
-            with open(os.path.join(root, f), encoding="utf-8", errors="replace") as fh:
+            with open(os.path.join(root, f), encoding="utf-8-sig", errors="replace") as fh:
                 for st in split_statements(fh.read()):
                     found |= hypertables_created_by(st)
     return found
@@ -824,7 +824,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not os.path.isfile(path):
             sys.stderr.write(f"Not a file: {path}\n")
             return 2
-        with open(path, encoding="utf-8", errors="replace") as fh:
+        with open(path, encoding="utf-8-sig", errors="replace") as fh:
             src = fh.read()
         fs, stmts, created_before = custom_checks(path, src, hypertables)
         findings += fs
