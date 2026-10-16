@@ -1,0 +1,61 @@
+name: Migration Lint Tests
+
+# Tests the migration linter in scripts/migration-lint: its fixtures, the
+# pinned squawk release, and the reusable workflow that runs both. The other
+# workflows here have no self-test; this one exists because the linter is code,
+# not just YAML.
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/migration-lint/**'
+      - '.github/workflows/migration-lint.yml'
+      - '.github/workflows/migration-lint-test.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/migration-lint/**'
+      - '.github/workflows/migration-lint.yml'
+      - '.github/workflows/migration-lint-test.yml'
+
+permissions: {}
+
+concurrency:
+  group: migration-lint-test-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Fixtures and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install the pinned squawk
+        id: squawk
+        run: echo "dir=$(scripts/migration-lint/install-squawk.sh "$RUNNER_TEMP/squawk")" >> "$GITHUB_OUTPUT"
+
+      - name: Shellcheck
+        run: shellcheck scripts/migration-lint/install-squawk.sh
+
+      - name: Run the tests
+        working-directory: scripts/migration-lint
+        env:
+          SQUAWK: ${{ steps.squawk.outputs.dir }}/squawk
+        run: python3 -I -m unittest discover -s tests -v
+
+  # The reusable workflow itself, called the way a consumer calls it. The fixture
+  # directory is clean and unchanged by most pull requests, so this proves the
+  # checkout, python, squawk install and script path wire together. The unit
+  # job above proves the findings.
+  reusable-workflow:
+    name: Reusable workflow
+    uses: ./.github/workflows/migration-lint.yml
+    permissions:
+      contents: read
+    with:
+      migrations_dir: scripts/migration-lint/tests/fixtures/clean-migrations
+      pg_version: '18'

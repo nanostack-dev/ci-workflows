@@ -4,3 +4,6 @@ worktrees/
 
 # Developer-specific agent permissions and settings.
 /.claude/settings.local.json
+
+# Python bytecode from the migration linter tests
+__pycache__/
