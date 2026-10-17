@@ -12,3 +12,5 @@
 A caller's `jobs.<name>.uses` binds a GitHub repository/ref; `with`, explicit secrets and caller permissions define the contract. Runtime deployment ownership stays outside this repository. The dispatch workflow requires both `deploy_repository` and `DEPLOY_TOKEN`: missing either prevents the handoff and fails the job so an unsent deployment or preview cleanup cannot appear successful.
 
 Source files are authoritative for required values and defaults. Avoid copying a workflow's full schema into a second maintained table. Read [runner flakes](../self-hosted-runner-flakes.md) before changing job concurrency/network or lint execution assumptions.
+
+Callers that pin golangci-lint locally pass their committed version file through `go-build-test.yml`'s `lint_version_file` input. The lint action reads it relative to `lint_working_directory`, so local tooling and CI share one pin. An empty input preserves the workflow's pinned default for other callers; an invalid or missing requested file fails the lint action.

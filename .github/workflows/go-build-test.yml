@@ -30,6 +30,11 @@ on:
         required: false
         default: --timeout 5m
         type: string
+      lint_version_file:
+        description: Exact golangci-lint version file, relative to lint_working_directory; empty keeps the pinned default
+        required: false
+        default: ""
+        type: string
       lint_skip_cache:
         description: Skip golangci-lint cache
         required: false
@@ -165,7 +170,8 @@ jobs:
       # against every caller's config.
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v2.14.0
+          version: ${{ inputs.lint_version_file == '' && 'v2.14.0' || '' }}
+          version-file: ${{ inputs.lint_version_file }}
           working-directory: ${{ inputs.lint_working_directory }}
           args: ${{ inputs.lint_args }} --allow-parallel-runners
           skip-cache: ${{ inputs.lint_skip_cache }}
