@@ -31,7 +31,7 @@ on:
         default: --timeout 5m
         type: string
       lint_version_file:
-        description: Exact golangci-lint version file, relative to lint_working_directory; empty keeps latest
+        description: Exact golangci-lint version file, relative to lint_working_directory; empty keeps the pinned default
         required: false
         default: ""
         type: string
@@ -163,9 +163,14 @@ jobs:
       # self-hosted host every runner slot shares /tmp, so two lint jobs from
       # different PRs collided (echopoint run 36771841893). The shared analysis
       # cache is safe for concurrent processes, so the lock guards nothing here.
+      # Pinned, not `latest`: a new golangci-lint release can reject a working
+      # .golangci.yml. v2.15.0 (2026-10-16) failed `config verify` on Anchor's
+      # config and broke every lint job the day it shipped. Bump to a release
+      # at least 7 days old (infra ADR 0004 D5), after running it locally
+      # against every caller's config.
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: ${{ inputs.lint_version_file == '' && 'latest' || '' }}
+          version: ${{ inputs.lint_version_file == '' && 'v2.14.0' || '' }}
           version-file: ${{ inputs.lint_version_file }}
           working-directory: ${{ inputs.lint_working_directory }}
           args: ${{ inputs.lint_args }} --allow-parallel-runners

@@ -1,0 +1,140 @@
+name: Migration Lint
+
+# Fails a pull request that adds or changes a Postgres migration unsafe to run
+# against a database that is serving traffic: a plain CREATE INDEX that blocks
+# writes, a CONCURRENTLY statement sharing a file with another statement, a
+# backfill that updates every row in one transaction, an index on a TimescaleDB
+# hypertable built without transaction_per_chunk.
+#
+# Only the files the change adds or modifies are linted. Migrations are
+# append-only, so the history would only add noise.
+#
+# Two layers, both run from scripts/migration-lint in this repository (checked
+# out at the commit that defines this job, like the Vitest watchdog in
+# frontend-verify.yml):
+#   - squawk, pinned by version and SHA-256 in install-squawk.sh
+#   - custom checks squawk cannot make, in migration_lint.py
+# docs/technical/migration-lint.md lists the rules, what is switched off and why,
+# and the opt-out comments.
+
+on:
+  workflow_call:
+    inputs:
+      migrations_dir:
+        description: >-
+          Directory holding the golang-migrate *.up.sql and *.down.sql files,
+          relative to the repository root.
+        required: true
+        type: string
+      base_ref:
+        description: >-
+          Ref or SHA to compare against. Empty means the pull request's base
+          commit (the previous push for a push event). A base that cannot be
+          resolved fails the job: linting nothing would pass unchecked
+          migrations.
+        required: false
+        default: ''
+        type: string
+      excluded_rules:
+        description: >-
+          Extra squawk rules to disable for this caller, comma or newline
+          separated. They add to the rules switched off for everyone (see
+          docs/technical/migration-lint.md); a caller states its reason in a
+          comment beside the input.
+        required: false
+        default: ''
+        type: string
+      included_rules:
+        description: Opt-in squawk rules to enable, comma or newline separated
+        required: false
+        default: ''
+        type: string
+      pg_version:
+        description: Postgres major version squawk should assume, for example 18
+        required: false
+        default: ''
+        type: string
+      hypertables:
+        description: >-
+          Hypertable names that no migration creates with create_hypertable()
+          (those are found automatically), comma or newline separated.
+        required: false
+        default: ''
+        type: string
+      runner:
+        description: Runner label
+        required: false
+        default: ubuntu-latest
+        type: string
+      timeout_minutes:
+        description: Job timeout
+        required: false
+        default: 10
+        type: number
+
+jobs:
+  migration-lint:
+    name: Migration lint
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    steps:
+      # The whole history, so the merge base with the base ref exists.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Check out the linter
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci-workflows
+          sparse-checkout: scripts/migration-lint
+
+      # A self-hosted image is not guaranteed to carry python3; set it up only
+      # when it is missing, so a hosted runner pays nothing.
+      - name: Look for python3
+        id: python
+        shell: bash
+        run: |
+          if command -v python3 > /dev/null 2>&1; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: steps.python.outputs.present != 'true'
+        with:
+          python-version: '3.x'
+
+      - name: Install squawk
+        id: squawk
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$(bash "$GITHUB_WORKSPACE/.ci-workflows/scripts/migration-lint/install-squawk.sh" "$RUNNER_TEMP/squawk")"
+          echo "path=$dir/squawk" >> "$GITHUB_OUTPUT"
+
+      - name: Lint the migrations this change adds or modifies
+        shell: bash
+        env:
+          MIGRATIONS_DIR: ${{ inputs.migrations_dir }}
+          BASE: ${{ inputs.base_ref || (github.event_name == 'pull_request' && github.event.pull_request.base.sha) || (github.event_name == 'push' && github.event.before) || '' }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          EXCLUDED_RULES: ${{ inputs.excluded_rules }}
+          INCLUDED_RULES: ${{ inputs.included_rules }}
+          PG_VERSION: ${{ inputs.pg_version }}
+          HYPERTABLES: ${{ inputs.hypertables }}
+          SQUAWK: ${{ steps.squawk.outputs.path }}
+        run: |
+          set -euo pipefail
+          args=(--migrations-dir "$MIGRATIONS_DIR" --squawk "$SQUAWK" --head "$HEAD")
+          [[ -n "$BASE" ]] && args+=(--base "$BASE")
+          [[ -n "$EXCLUDED_RULES" ]] && args+=(--exclude-rules "$EXCLUDED_RULES")
+          [[ -n "$INCLUDED_RULES" ]] && args+=(--include-rules "$INCLUDED_RULES")
+          [[ -n "$PG_VERSION" ]] && args+=(--pg-version "$PG_VERSION")
+          [[ -n "$HYPERTABLES" ]] && args+=(--hypertables "$HYPERTABLES")
+          exec python3 -I "$GITHUB_WORKSPACE/.ci-workflows/scripts/migration-lint/migration_lint.py" "${args[@]}"
