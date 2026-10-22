@@ -13,4 +13,10 @@ A caller's `jobs.<name>.uses` binds a GitHub repository/ref; `with`, explicit se
 
 Source files are authoritative for required values and defaults. Avoid copying a workflow's full schema into a second maintained table. Read [runner flakes](../self-hosted-runner-flakes.md) before changing job concurrency/network or lint execution assumptions.
 
+The flow-suite workflow selects an explicit workspace alongside the CI organization
+and API key. The matching `ECHOPOINT_CI_WORKSPACE_ID_DEV` or
+`ECHOPOINT_CI_WORKSPACE_ID_PROD` field belongs to `infra-control-plane` in 1Password.
+Release the CLI Action with its `workspace-id` input before workspace enforcement.
+The selected workspace must remain linked to that control plane's CI organization.
+
 Callers that pin golangci-lint locally pass their committed version file through `go-build-test.yml`'s `lint_version_file` input. The lint action reads it relative to `lint_working_directory`, so local tooling and CI share one pin. An empty input preserves the workflow's pinned default for other callers; an invalid or missing requested file fails the lint action.

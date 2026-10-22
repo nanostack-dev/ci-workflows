@@ -82,6 +82,7 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           ECHOPOINT_CI_API_KEY: op://Nanostack/infra-control-plane/${{ inputs.control_plane == 'dev' && 'ECHOPOINT_CI_API_KEY_DEV' || 'ECHOPOINT_CI_API_KEY_PROD' }}
           ECHOPOINT_CI_ORG_ID: op://Nanostack/infra-control-plane/${{ inputs.control_plane == 'dev' && 'ECHOPOINT_CI_ORG_ID_DEV' || 'ECHOPOINT_CI_ORG_ID_PROD' }}
+          ECHOPOINT_CI_WORKSPACE_ID: op://Nanostack/infra-control-plane/${{ inputs.control_plane == 'dev' && 'ECHOPOINT_CI_WORKSPACE_ID_DEV' || 'ECHOPOINT_CI_WORKSPACE_ID_PROD' }}
 
       - name: Run flow suite
         id: run
@@ -90,6 +91,7 @@ jobs:
         with:
           api-key: ${{ env.ECHOPOINT_CI_API_KEY }}
           organization-id: ${{ env.ECHOPOINT_CI_ORG_ID }}
+          workspace-id: ${{ env.ECHOPOINT_CI_WORKSPACE_ID }}
           api-url: ${{ inputs.control_plane == 'dev' && 'https://apidev.echopoint.dev' || 'https://api.echopoint.dev' }}
           tags: ${{ inputs.tag }}
           match-mode: ${{ inputs.match_mode }}
