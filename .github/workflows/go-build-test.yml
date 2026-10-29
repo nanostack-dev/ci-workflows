@@ -117,6 +117,17 @@ on:
         required: false
         default: 30
         type: number
+      go_test_parallelism:
+        description: >-
+          Go packages tested at once on a self-hosted runner (`go test -p`).
+          Integration packages each start their own containers, and Docker runs
+          them outside the runner slot's memory cap: at Go's default of one per
+          CPU, one atelier job ran 31 to 43 Postgres containers at once on 1340p
+          and filled the host. Empty keeps Go's default. GitHub-hosted runners
+          always keep Go's default.
+        required: false
+        default: '4'
+        type: string
     outputs:
       deploy_image_tag:
         description: Image tag resolved for downstream deploy workflows
@@ -228,9 +239,16 @@ jobs:
         shell: bash
         env:
           TEST_SUITES_JSON: ${{ inputs.test_suites_json }}
+          GO_TEST_PARALLELISM: ${{ runner.environment != 'github-hosted' && inputs.go_test_parallelism || '' }}
         run: |
           set -euo pipefail
           export PATH="$(go env GOPATH)/bin:$PATH"
+          # GOFLAGS reaches every suite, including the ones that run go test
+          # through gotestsum or a login shell. An explicit -p in a suite's
+          # command still wins.
+          if [ -n "$GO_TEST_PARALLELISM" ]; then
+            export GOFLAGS="${GOFLAGS:+$GOFLAGS }-p=$GO_TEST_PARALLELISM"
+          fi
           failed=0
 
           while IFS= read -r suite; do
