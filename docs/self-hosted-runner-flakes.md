@@ -1,6 +1,6 @@
 # Flakes on self-hosted runners
 
-Two failures that only appear when several jobs share one self-hosted host. Both are fixed in these workflows. This page explains each one, so that a regression is recognised quickly.
+Three failures that only appear when several jobs share one self-hosted host. All are fixed or capped in these workflows. This page explains each one, so that a regression is recognised quickly.
 
 ## Storybook tests hang or fail to import a module
 
@@ -62,3 +62,24 @@ golangci-lint takes a lock at `os.TempDir()/golangci-lint.lock` (`pkg/commands/r
 ### Fix
 
 `go-build-test.yml` passes `--allow-parallel-runners`. The analysis cache stays shared between slots, so warm runs stay fast. The cache is a fork of the Go build cache, which supports concurrent processes. In a test with one shared cache, two concurrent runs both passed with the same result (`0 issues`). Without the flag, the second run failed after 5 s.
+
+## Integration tests fill the host's memory
+
+### Symptoms
+
+- Services on the runner host slow down or fail while a Go test job runs: DNS lookups and database calls time out, health checks fail, a Cloudflare tunnel on the host drops.
+- The host's memory use jumps by several GiB, but the runner slot's own cgroup stays under its `MemoryMax`.
+- `docker ps` on the host lists dozens of test database containers with random names.
+
+### Cause
+
+Each integration test package starts its own containers, for example a Postgres and an Anchor fixture. `go test ./...` tests one package per CPU at once, so on a 16-thread host one job runs up to 16 packages and their containers together. Docker starts containers in its own cgroups, outside the runner slot, so the slot's `MemoryMax` does not cap them. On 2026-10-29 one atelier job on `1340p` ran 31 to 43 `timescale/timescaledb` containers at once, up to about 10 GiB, and filled the host.
+
+### Fix
+
+`go-build-test.yml` sets `GOFLAGS=-p=<go_test_parallelism>` for the test suites on self-hosted runners, 4 by default. A caller can pass another value, or an empty string for Go's default. A `-p` in a suite's own command still wins. GitHub-hosted runners keep Go's default.
+
+### Diagnose
+
+1. Count the test containers on the host during the job: `docker ps --format '{{.Image}}' | sort | uniq -c`.
+2. Compare the host's used memory with the slot's: `systemctl show <unit> -p MemoryCurrent`.
