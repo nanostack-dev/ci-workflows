@@ -1,6 +1,6 @@
 # Flakes on self-hosted runners
 
-Three failures that only appear when several jobs share one self-hosted host. All are fixed or capped in these workflows. This page explains each one, so that a regression is recognised quickly.
+Four failures that only appear when several jobs share one self-hosted host. All are fixed or capped in these workflows. This page explains each one, so that a regression is recognised quickly.
 
 ## Storybook tests hang or fail to import a module
 
@@ -83,3 +83,41 @@ Each integration test package starts its own containers, for example a Postgres 
 
 1. Count the test containers on the host during the job: `docker ps --format '{{.Image}}' | sort | uniq -c`.
 2. Compare the host's used memory with the slot's: `systemctl show <unit> -p MemoryCurrent`.
+
+## golangci-lint exits with code 137
+
+### Symptoms
+
+- `Lint <app> app` fails after 3 to 6 minutes with `Killed` and `golangci-lint exit with code 137`. A re-run passes.
+- The kills repeat in one runner slot. On 2026-10-30, all three echopoint kills ran in `1340p-r1`: two pushes to main (86d42c1d, caed5aa3) and one pull request (run 41100497513). It is not specific to main.
+- `journalctl -k` on the host shows `Memory cgroup out of memory: Killed process … (golangci-lint)` with `oom_memcg=…1340p-r1.service` and about 5.3 GB `anon-rss`, well under the slot's 8 GiB `MemoryMax`.
+
+### Cause
+
+`/tmp` on 1340p is tmpfs, and the host has no swap. A file in tmpfs is memory. The kernel charges it to the cgroup of the slot that wrote it and keeps the charge until the file is deleted. Jobs leave files there after they finish, so a slot's free room under `MemoryMax` shrinks with each job until the slot restarts. On 2026-10-30, `/tmp` held 6 GB:
+
+- 228 `tmp.*` directories, 4.5 GB. Most hold a 46 MB `op` binary: `1password/install-cli-action` installs the 1Password CLI into a new temporary directory on every run and never deletes it.
+- Two `go-build*` directories, 1.2 GB, from Go builds killed on 2026-10-29.
+
+Slot `1340p-r1` had 2.9 GB of `shmem` in its `memory.stat`. The other slots had 1.1 to 1.3 GB. golangci-lint needs about 5.2 GB on echopoint with a cold analysis cache (measured locally, v2.14.0, `--concurrency` 8 and 16 alike), so in r1 it reached the cap at 5.3 GB. Each kill comes after minutes of reclaim at the cap: r1's `memory.events` counted 3.3 million `max` events, against 23 000 to 44 000 for the other slots.
+
+### Fix
+
+- `go-build-test.yml` sets `GOMEMLIMIT` for golangci-lint on self-hosted runners (`lint_go_memory_limit`, 3GiB by default). The live heap at peak is about 4 GB, so a lower limit saves nothing more. Measured on echopoint caed5aa3 with golangci-lint v2.14.0 and a cold analysis cache:
+
+  | Where | Limit | Result | Peak |
+  |---|---|---|---|
+  | macOS, 12 cores | none | `0 issues`, 105 s | 5.2 GB footprint |
+  | macOS, 12 cores | 3GiB | `0 issues`, 104 s | 4.4 GB footprint |
+  | 1340p, `MemoryMax=5G` (r1's room) | none | killed, exit 137, after 411 s (cold build cache) and 25 s (warm) | at the cap |
+  | 1340p, `MemoryMax=5G` | 3GiB | `0 issues`, 63 s (cold build cache) and 52 s (warm) | 4030 MiB `anon` |
+
+  The 1340p runs used the method in infra `docs/github-runners.md` (`systemd-run` with the slot's limits).
+- The lint and test steps set `GOTMPDIR` to `RUNNER_TEMP`, which is on disk and emptied after every job. A killed Go build no longer leaves memory charged to the slot.
+- These two changes let lint pass in about 5 GB. They do not remove the files other jobs leave in `/tmp`. That fix belongs to the runner host and the workflows that install tools there, in nanostack-dev/infra.
+
+### Diagnose
+
+1. Find the slot and the size at the kill: `journalctl -k | grep "Memory cgroup out of memory"`.
+2. Read what the slot holds that is not the job: `grep -E "^(anon|shmem|file) " /sys/fs/cgroup/system.slice/<unit>/memory.stat`. A large `shmem` with no job running means files left in tmpfs.
+3. Find the files: `du -xsh /tmp/* | sort -h | tail`.
