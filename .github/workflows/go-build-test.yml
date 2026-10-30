@@ -45,6 +45,18 @@ on:
         required: false
         default: false
         type: boolean
+      lint_go_memory_limit:
+        description: >-
+          GOMEMLIMIT for golangci-lint on a self-hosted runner. The slot's
+          MemoryMax also counts files that earlier jobs left in the host's tmpfs
+          /tmp. On 2026-10-30 slot 1340p-r1 held 2.9 GB of them, and the kernel
+          killed golangci-lint on echopoint three times at 5.3 GB. With a cold
+          cache, echopoint lint peaks at 5.2 GB by default and at 4.4 GB with
+          3GiB. Empty keeps Go's default. GitHub-hosted runners always keep
+          Go's default.
+        required: false
+        default: '3GiB'
+        type: string
       skip_lint:
         description: >-
           Skip the lint job entirely. Escape hatch for a caller whose code
@@ -179,7 +191,16 @@ jobs:
       # config and broke every lint job the day it shipped. Bump to a release
       # at least 7 days old (infra ADR 0004 D5), after running it locally
       # against every caller's config.
+      #
+      # GOMEMLIMIT: see the lint_go_memory_limit input. The limit is below the
+      # live heap at peak (about 4 GB on echopoint), so the GC collects without
+      # pause near the peak. Go caps that GC at half the CPU, and the cold run
+      # took the same wall time. --concurrency does not help: 8 and 16 both
+      # peaked at 5.2 GB. GOTMPDIR: see the same variable in the tests job.
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        env:
+          GOMEMLIMIT: ${{ runner.environment != 'github-hosted' && inputs.lint_go_memory_limit || '' }}
+          GOTMPDIR: ${{ runner.environment != 'github-hosted' && runner.temp || '' }}
         with:
           version: ${{ inputs.lint_version_file == '' && 'v2.14.0' || '' }}
           version-file: ${{ inputs.lint_version_file }}
@@ -240,6 +261,13 @@ jobs:
         env:
           TEST_SUITES_JSON: ${{ inputs.test_suites_json }}
           GO_TEST_PARALLELISM: ${{ runner.environment != 'github-hosted' && inputs.go_test_parallelism || '' }}
+          # Go builds in GOTMPDIR, /tmp by default. A job killed mid-build
+          # leaves its go-build* directory there. On a host where /tmp is tmpfs,
+          # the files stay in memory, charged to the slot that wrote them, and
+          # shrink that slot's room under MemoryMax for every later job. On
+          # 1340p two such directories held 1.2 GB. RUNNER_TEMP is on disk and
+          # the runner empties it after every job.
+          GOTMPDIR: ${{ runner.environment != 'github-hosted' && runner.temp || '' }}
         run: |
           set -euo pipefail
           export PATH="$(go env GOPATH)/bin:$PATH"
