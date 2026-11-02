@@ -48,8 +48,8 @@ on:
       workspace_id:
         description: >-
           Workspace that holds the tagged flows. Empty uses the control plane's
-          ECHOPOINT_CI_WORKSPACE_ID field. Pass it when a CI organization keeps
-          each product's suite in its own workspace.
+          per-product ECHOPOINT_CI_WORKSPACE_ID_<ENV>_<PRODUCT> field (for
+          anchor, echopoint, atelier) or ECHOPOINT_CI_WORKSPACE_ID_<ENV>.
         required: false
         default: ''
         type: string
@@ -91,6 +91,9 @@ jobs:
           ECHOPOINT_CI_API_KEY: op://Nanostack/infra-control-plane/${{ inputs.control_plane == 'dev' && 'ECHOPOINT_CI_API_KEY_DEV' || 'ECHOPOINT_CI_API_KEY_PROD' }}
           ECHOPOINT_CI_ORG_ID: op://Nanostack/infra-control-plane/${{ inputs.control_plane == 'dev' && 'ECHOPOINT_CI_ORG_ID_DEV' || 'ECHOPOINT_CI_ORG_ID_PROD' }}
           ECHOPOINT_CI_WORKSPACE_ID: op://Nanostack/infra-control-plane/${{ inputs.control_plane == 'dev' && 'ECHOPOINT_CI_WORKSPACE_ID_DEV' || 'ECHOPOINT_CI_WORKSPACE_ID_PROD' }}
+          ECHOPOINT_CI_WORKSPACE_ID_ANCHOR: op://Nanostack/infra-control-plane/${{ inputs.control_plane == 'dev' && 'ECHOPOINT_CI_WORKSPACE_ID_DEV_ANCHOR' || 'ECHOPOINT_CI_WORKSPACE_ID_PROD_ANCHOR' }}
+          ECHOPOINT_CI_WORKSPACE_ID_ECHOPOINT: op://Nanostack/infra-control-plane/${{ inputs.control_plane == 'dev' && 'ECHOPOINT_CI_WORKSPACE_ID_DEV_ECHOPOINT' || 'ECHOPOINT_CI_WORKSPACE_ID_PROD_ECHOPOINT' }}
+          ECHOPOINT_CI_WORKSPACE_ID_ATELIER: op://Nanostack/infra-control-plane/${{ inputs.control_plane == 'dev' && 'ECHOPOINT_CI_WORKSPACE_ID_DEV_ATELIER' || 'ECHOPOINT_CI_WORKSPACE_ID_PROD_ATELIER' }}
 
       - name: Run flow suite
         id: run
@@ -99,7 +102,7 @@ jobs:
         with:
           api-key: ${{ env.ECHOPOINT_CI_API_KEY }}
           organization-id: ${{ env.ECHOPOINT_CI_ORG_ID }}
-          workspace-id: ${{ inputs.workspace_id || env.ECHOPOINT_CI_WORKSPACE_ID }}
+          workspace-id: ${{ inputs.workspace_id || (inputs.tag == 'anchor' && env.ECHOPOINT_CI_WORKSPACE_ID_ANCHOR) || (inputs.tag == 'echopoint' && env.ECHOPOINT_CI_WORKSPACE_ID_ECHOPOINT) || (inputs.tag == 'atelier' && env.ECHOPOINT_CI_WORKSPACE_ID_ATELIER) || env.ECHOPOINT_CI_WORKSPACE_ID }}
           api-url: ${{ inputs.control_plane == 'dev' && 'https://apidev.echopoint.dev' || 'https://api.echopoint.dev' }}
           tags: ${{ inputs.tag }}
           match-mode: ${{ inputs.match_mode }}
