@@ -33,6 +33,14 @@ on:
         required: false
         default: '3'
         type: string
+      max_flows:
+        description: >-
+          The most flows the tag may match before the suite is refused. The CLI
+          default of 50 is too low for a product gate (echopoint reached 53 on
+          2026-11-04 and the gate failed before running any flow).
+        required: false
+        default: '200'
+        type: string
       poll_timeout:
         description: Max seconds to wait for each flow.
         required: false
@@ -108,6 +116,7 @@ jobs:
           match-mode: ${{ inputs.match_mode }}
           environment: ${{ inputs.environment }}
           parallel: ${{ inputs.parallel }}
+          max-flows: ${{ inputs.max_flows }}
           poll-timeout: ${{ inputs.poll_timeout }}
           cli-version: ${{ inputs.cli_version }}
 
