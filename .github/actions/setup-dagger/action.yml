@@ -1,0 +1,70 @@
+name: Set up Dagger
+description: >-
+  Install the organization's pinned Dagger CLI, checked against its published
+  SHA-256, and select the engine the job's dagger commands use. Then run
+  `dagger check --progress=report` (or any dagger command) in a later step.
+  docs/technical/dagger.md explains the engine choice and how to upgrade.
+
+inputs:
+  version:
+    description: >-
+      Dagger release. Leave the default: every repository moves together, and
+      the checksums below are for this version only.
+    required: false
+    default: v1.0.0-beta.24
+  engine:
+    description: >-
+      DAGGER_ENGINE for the job. Empty uses the engine image of the same
+      version on the runner's Docker daemon, with its cache in the named volume
+      dagger-engine-<version>, started on first use and reused
+      by every later job on that host. On a persistent self-hosted runner that
+      engine, and its cache, outlive the job; on an ephemeral runner (GitHub-
+      hosted, GARM) each job starts cold.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Install the Dagger CLI
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        BIN: ${{ runner.temp }}/dagger-bin
+      run: |
+        set -euo pipefail
+        # Checksums from https://dl.dagger.io/dagger/releases/<version>/checksums.txt.
+        # Bump them with the version default above, in the same change.
+        case "${VERSION}/$(uname -s)/$(uname -m)" in
+          v1.0.0-beta.24/Linux/x86_64) platform=linux_amd64 sum=648a5ffcf7d6d724526d20942066fd023cdf2b8284204d0ca3e1fcf6f0793f6e ;;
+          v1.0.0-beta.24/Linux/aarch64) platform=linux_arm64 sum=c6fd1d9fa53ac4880a21373411a923720cd65e6b7a05a617379278a524ee078d ;;
+          v1.0.0-beta.24/Darwin/arm64) platform=darwin_arm64 sum=f0b5bfe032f8d245633ee03c350fcc4ad7089bf46a1f86db0a8dddf3011ca5fc ;;
+          *) echo "::error::No pinned Dagger checksum for ${VERSION} on $(uname -s)/$(uname -m)"; exit 1 ;;
+        esac
+        if ! "$BIN/dagger" version 2>/dev/null | grep -q "$VERSION"; then
+          archive="dagger_${VERSION}_${platform}.tar.gz"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          curl -fsSL --retry 3 -o "$tmp/$archive" "https://dl.dagger.io/dagger/releases/${VERSION#v}/$archive"
+          echo "$sum  $tmp/$archive" | sha256sum -c - >/dev/null 2>&1 \
+            || echo "$sum  $tmp/$archive" | shasum -a 256 -c - >/dev/null
+          mkdir -p "$BIN"
+          tar -xzf "$tmp/$archive" -C "$BIN" dagger
+        fi
+        echo "$BIN" >> "$GITHUB_PATH"
+        "$BIN/dagger" version
+
+    - name: Select the engine
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        ENGINE: ${{ inputs.engine }}
+      run: |
+        set -euo pipefail
+        # Explicit, as Dagger's self-hosting guide asks: every job states the
+        # engine it uses instead of relying on the CLI's default.
+        # The named volume keeps the cache when the container is recreated. Every job
+        # on a host must use this exact string: two strings for one version make
+        # each CLI remove the other's engine.
+        echo "DAGGER_ENGINE=${ENGINE:-image://registry.dagger.io/engine:${VERSION}?volume=dagger-engine-${VERSION}}" >> "$GITHUB_ENV"
+        echo "DAGGER_NO_NAG=1" >> "$GITHUB_ENV"
