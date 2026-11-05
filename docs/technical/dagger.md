@@ -24,13 +24,15 @@ The engine is the cache. A check whose inputs did not change is a cache hit, so 
 
 | Runner | Engine | Cache |
 |---|---|---|
-| `nanostack-dev` slots on `1340p` | One container on the host's Docker daemon, shared by all slots | Persists across jobs, restarts and reboots |
+| `nanostack-dev` slots on `1340p` | One container on the host's Docker daemon, shared by all slots | Named volume `dagger-engine-<version>`: persists across jobs, restarts, reboots and a recreated container |
 | `nanostack-ci` (GARM, one VM per job) | Inside the job's VM | Deleted with the VM: every run is cold |
 | GitHub-hosted (`ubuntu-latest`, public repositories) | Inside the job's VM | Every run is cold |
 
 Dagger's own guidance is the same: give each engine a persistent disk, and do not run engines on a pool of ephemeral machines ([self-hosting](https://github.com/dagger/dagger/blob/main/docs/current_docs/self-hosting/index.mdx)). Repositories keep the runner they had. A job on an ephemeral runner gains local and CI parity from Dagger, but not speed.
 
 The engine on `1340p` runs outside the slots' `MemoryMax`, like any container a job starts. One engine for every repository means one cache and one place where checks compete for CPU. A repository that saturates it should split heavy checks rather than add parallel copies (see each repository's Dagger guide).
+
+Every job on a host must use the exact `DAGGER_ENGINE` string that `setup-dagger` sets. The CLI matches an engine by container name, and it removes engines of the same version that another string started. Two strings on one host make jobs kill each other's engine.
 
 ## Writing checks that stay maintainable
 
@@ -51,4 +53,4 @@ Dagger 1.0 is in beta. Upgrades are deliberate:
 
 1. Bump `version` and the checksums in `setup-dagger/action.yml` in this repository.
 2. In each repository, bump `engineVersion` in `.dagger/modules/*/dagger-module.toml`, run `dagger check`, and open a pull request.
-3. Expect the first run on each host to be cold, about the length of a full run without cache. The CLI starts the new engine and removes the old one.
+3. Expect the first run on each host to be cold, about the length of a full run without cache. The CLI starts the new engine and removes the old one. Then delete the old cache on the host: `docker volume rm dagger-engine-<old version>`.

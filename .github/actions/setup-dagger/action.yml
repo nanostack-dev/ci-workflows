@@ -15,7 +15,8 @@ inputs:
   engine:
     description: >-
       DAGGER_ENGINE for the job. Empty uses the engine image of the same
-      version on the runner's Docker daemon, started on first use and reused
+      version on the runner's Docker daemon, with its cache in the named volume
+      dagger-engine-<version>, started on first use and reused
       by every later job on that host. On a persistent self-hosted runner that
       engine, and its cache, outlive the job; on an ephemeral runner (GitHub-
       hosted, GARM) each job starts cold.
@@ -62,5 +63,8 @@ runs:
         set -euo pipefail
         # Explicit, as Dagger's self-hosting guide asks: every job states the
         # engine it uses instead of relying on the CLI's default.
-        echo "DAGGER_ENGINE=${ENGINE:-image://registry.dagger.io/engine:${VERSION}}" >> "$GITHUB_ENV"
+        # The named volume keeps the cache when the container is recreated. Every job
+        # on a host must use this exact string: two strings for one version make
+        # each CLI remove the other's engine.
+        echo "DAGGER_ENGINE=${ENGINE:-image://registry.dagger.io/engine:${VERSION}?volume=dagger-engine-${VERSION}}" >> "$GITHUB_ENV"
         echo "DAGGER_NO_NAG=1" >> "$GITHUB_ENV"
