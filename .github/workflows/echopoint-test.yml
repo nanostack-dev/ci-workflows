@@ -79,7 +79,7 @@ jobs:
     name: Echopoint flow suite (${{ inputs.tag }})
     runs-on: ${{ inputs.runner }}
     outputs:
-      outcome: ${{ steps.run.outcome }}
+      outcome: ${{ steps.verdict.outputs.outcome }}
     steps:
       - name: Validate control plane
         env:
@@ -105,6 +105,10 @@ jobs:
 
       - name: Run flow suite
         id: run
+        # A TCP reset before any response fails a flow at once (the runner
+        # replays no node), and a reset cleanup leaks what the flow created.
+        # The next step reruns such flows once; the verdict step fails the job.
+        continue-on-error: true
         # Our own action: it follows the floating v1 tag, not a SHA pin.
         uses: nanostack-dev/echopoint-cli@v1
         with:
@@ -120,8 +124,73 @@ jobs:
           poll-timeout: ${{ inputs.poll_timeout }}
           cli-version: ${{ inputs.cli_version }}
 
-      - name: Annotate failure
-        if: ${{ failure() && steps.run.outcome == 'failure' }}
+      - name: Rerun flows that failed on a transport error
+        id: rerun
+        if: ${{ steps.run.outcome == 'failure' }}
         shell: bash
+        env:
+          ECHOPOINT_API_KEY: ${{ env.ECHOPOINT_CI_API_KEY }}
+          ECHOPOINT_ORGANIZATION_ID: ${{ env.ECHOPOINT_CI_ORG_ID }}
+          ECHOPOINT_WORKSPACE_ID: ${{ inputs.workspace_id || (inputs.tag == 'anchor' && env.ECHOPOINT_CI_WORKSPACE_ID_ANCHOR) || (inputs.tag == 'echopoint' && env.ECHOPOINT_CI_WORKSPACE_ID_ECHOPOINT) || (inputs.tag == 'atelier' && env.ECHOPOINT_CI_WORKSPACE_ID_ATELIER) || env.ECHOPOINT_CI_WORKSPACE_ID }}
+          ECHOPOINT_API_URL: ${{ inputs.control_plane == 'dev' && 'https://apidev.echopoint.dev' || 'https://api.echopoint.dev' }}
+          FLOW_ENVIRONMENT: ${{ inputs.environment }}
+          RESULTS_FILE: ${{ steps.run.outputs.results-file }}
+        # Same rule as the routine's run_suites.sh: a flow whose failure is a
+        # transport error before any response reruns once; any other failure,
+        # or more than 5 transport failures (host network down), fails the suite.
+        # Every `always` request node of a transport-failed run that did not
+        # complete is printed as TRANSPORT-LEAK: delete what it was cleaning up.
+        # Postmortem: docs/postmortems/2026-11-05-gate-transport-resets.md
         run: |
+          set -uo pipefail
+          transport='Could not connect to|Connection refused by|TLS handshake|Could not resolve host|Request to [^ ]+ timed out'
+          if [ ! -s "${RESULTS_FILE:-}" ]; then
+            echo "::error::No flow results: the suite failed before running a flow."
+            exit 1
+          fi
+          failed=$(jq -r '.results[]? | select(.success | not) | .flow_id' "$RESULTS_FILE")
+          other=$(jq -r --arg re "$transport" '.results[]? | select(.success | not)
+            | select((.error_message // "") | test($re) | not) | .flow_id' "$RESULTS_FILE")
+          if [ -z "$failed" ] || [ -n "$other" ]; then
+            echo "::error::Flows failed on more than a transport error: ${other//$'\n'/ }."
+            exit 1
+          fi
+          for flow in $failed; do
+            echopoint flows get "$flow" -o json \
+              | jq -r '.flow_definition.nodes[] | select(.run_when == "always" and .type == "request") | .id' \
+              | while read -r node; do
+                  jq -r --arg f "$flow" --arg n "$node" '.results[] | select(.flow_id == $f) | .nodes[]?
+                    | select(.node_id == $n and .status != "completed")
+                    | "::warning::TRANSPORT-LEAK \($f) \(.node_id) \(.status): delete what this cleanup node owns"' "$RESULTS_FILE"
+                done
+          done
+          count=$(echo "$failed" | wc -l | tr -d ' ')
+          if [ "$count" -gt 5 ]; then
+            echo "::error::HOST-NETWORK-DEGRADED: $count flows failed on transport errors; no rerun."
+            exit 1
+          fi
+          status=0
+          for flow in $failed; do
+            echo "::warning::TRANSPORT-RERUN $flow"
+            if ! echopoint flows run "$flow" --environment "$FLOW_ENVIRONMENT" >/dev/null; then
+              echo "::error::Flow $flow failed again on its rerun."
+              status=1
+            fi
+          done
+          exit "$status"
+
+      - name: Suite verdict
+        id: verdict
+        if: ${{ always() }}
+        shell: bash
+        env:
+          RUN: ${{ steps.run.outcome }}
+          RERUN: ${{ steps.rerun.outcome }}
+        run: |
+          if [ "$RUN" = success ] || [ "$RERUN" = success ]; then
+            echo "outcome=success" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "outcome=failure" >> "$GITHUB_OUTPUT"
           echo "::error::echopoint flow suite (tag '${{ inputs.tag }}') failed against the '${{ inputs.environment }}' environment." >&2
+          exit 1
