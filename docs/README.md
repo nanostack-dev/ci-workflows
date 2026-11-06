@@ -11,3 +11,7 @@ Start with [agent guidance](../AGENTS.md) and [vocabulary](../CONTEXT.md).
 - [Self-hosted runner flakes](self-hosted-runner-flakes.md): existing evidence and prevention.
 
 The workflow files own exact inputs/defaults; guides explain boundaries and how to verify consumers.
+
+## Postmortems
+
+- [2026-11-05 gate transport resets](postmortems/2026-11-05-gate-transport-resets.md): the gate reruns a transport-only failure once and reports leaked cleanups ([report](postmortems/2026-11-05-gate-transport-resets.html)).
