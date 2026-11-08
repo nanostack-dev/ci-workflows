@@ -324,6 +324,15 @@ jobs:
       # `${{ }}` inside `run:`. GitHub's secure-use reference calls the
       # intermediate environment variable the preferred form: the value is read
       # as a variable instead of being pasted into the generated shell script.
+      #
+      # Self-hosted runners differ in sudo. A GARM VM has passwordless sudo, so
+      # `--with-deps` installs the libraries as before; the flock keeps two jobs
+      # on one host out of apt at once. The 1340p slots have no sudo (infra ADR
+      # 0008 D4): Ansible installs the libraries there for the GARM image's
+      # Playwright version, and the job only downloads the browser. A dry run
+      # then checks the host. From Playwright 1.60 it exits non-zero when a
+      # package is missing, and the step warns; earlier versions only print the
+      # apt command, so they never warn.
       - name: Install Playwright browser for Storybook tests
         if: inputs.storybook_test_command != '' && inputs.storybook_test_shards <= 1 && runner.environment == 'github-hosted'
         timeout-minutes: 5
@@ -339,7 +348,18 @@ jobs:
         shell: bash
         env:
           PLAYWRIGHT_BROWSER: ${{ inputs.playwright_browser }}
-        run: flock /tmp/playwright-apt.lock pnpm exec playwright install --with-deps "$PLAYWRIGHT_BROWSER"
+        run: |
+          set -euo pipefail
+          if sudo -n true 2>/dev/null; then
+            flock /tmp/playwright-apt.lock pnpm exec playwright install --with-deps "$PLAYWRIGHT_BROWSER"
+            exit 0
+          fi
+          pnpm exec playwright install "$PLAYWRIGHT_BROWSER"
+          if ! report="$(pnpm exec playwright install-deps --dry-run "$PLAYWRIGHT_BROWSER" 2>&1)"; then
+            printf '%s\n' "$report"
+            version="$(pnpm exec playwright --version)"
+            echo "::warning title=Playwright system libraries missing::Playwright ${version#Version } needs packages for $PLAYWRIGHT_BROWSER that this runner lacks (listed above), and the job has no sudo to install them. On the nanostack-dev 1340p slots, set garm_playwright_version to ${version#Version } in nanostack-dev/infra ansible/playbooks/garm-runners.yml, then apply github-runners.yml."
+          fi
         working-directory: ${{ inputs.working_directory }}
 
       # The watchdog lives next to this workflow, not in the caller, so check out
@@ -507,13 +527,25 @@ jobs:
         run: pnpm exec playwright install "$PLAYWRIGHT_BROWSER"
         working-directory: ${{ inputs.working_directory }}
 
+      # Same as the step in the storybook job: `--with-deps` only with sudo.
       - name: Install Playwright browser and OS dependencies for Storybook tests
         if: runner.environment != 'github-hosted'
         timeout-minutes: 5
         shell: bash
         env:
           PLAYWRIGHT_BROWSER: ${{ inputs.playwright_browser }}
-        run: flock /tmp/playwright-apt.lock pnpm exec playwright install --with-deps "$PLAYWRIGHT_BROWSER"
+        run: |
+          set -euo pipefail
+          if sudo -n true 2>/dev/null; then
+            flock /tmp/playwright-apt.lock pnpm exec playwright install --with-deps "$PLAYWRIGHT_BROWSER"
+            exit 0
+          fi
+          pnpm exec playwright install "$PLAYWRIGHT_BROWSER"
+          if ! report="$(pnpm exec playwright install-deps --dry-run "$PLAYWRIGHT_BROWSER" 2>&1)"; then
+            printf '%s\n' "$report"
+            version="$(pnpm exec playwright --version)"
+            echo "::warning title=Playwright system libraries missing::Playwright ${version#Version } needs packages for $PLAYWRIGHT_BROWSER that this runner lacks (listed above), and the job has no sudo to install them. On the nanostack-dev 1340p slots, set garm_playwright_version to ${version#Version } in nanostack-dev/infra ansible/playbooks/garm-runners.yml, then apply github-runners.yml."
+          fi
         working-directory: ${{ inputs.working_directory }}
 
       # The watchdog lives next to this workflow, not in the caller, so check out
