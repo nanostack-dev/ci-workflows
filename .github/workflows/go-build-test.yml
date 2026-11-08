@@ -246,15 +246,23 @@ jobs:
           cd "${{ inputs.download_dependencies_dir }}"
           go mod download
 
+      # Without sudo: the 1340p slots have none (infra ADR 0008 D4), and
+      # Ansible installs this gotestsum version in /usr/local/bin there. Other
+      # runners get it from `go install` into GOPATH/bin, which the job's user
+      # owns and setup-go has already put on PATH. The step used to copy it to
+      # /usr/local/bin with sudo for suites run through a login shell; suites
+      # run with `bash -c` since 2372b7d, and the test step puts GOPATH/bin
+      # first on PATH.
       - name: Install gotestsum
+        shell: bash
         run: |
+          set -euo pipefail
+          if command -v gotestsum >/dev/null; then
+            echo "Using $(command -v gotestsum): $(gotestsum --version)"
+            exit 0
+          fi
           go install gotest.tools/gotestsum@v1.13.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          # Test suites run via `bash -lc`, a login shell that re-initializes PATH
-          # from the system profile and drops the $GITHUB_PATH addition above.
-          # Install gotestsum into /usr/local/bin (always on the login-shell PATH)
-          # so the binary stays resolvable inside each suite shell.
-          sudo install -m 0755 "$(go env GOPATH)/bin/gotestsum" /usr/local/bin/gotestsum
 
       - name: Run configured test suites
         shell: bash

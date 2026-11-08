@@ -18,3 +18,5 @@ It should not contain deploy, preview, infra checkout, or environment-specific s
 ## Self-hosted runners
 
 [`docs/self-hosted-runner-flakes.md`](docs/self-hosted-runner-flakes.md) explains two failures that only happen when several jobs share one self-hosted host, and how these workflows prevent them: Storybook tests that hang or fail to import a module (Chrome's `net::ERR_NETWORK_CHANGED` on Docker interface changes), and golangci-lint's `parallel golangci-lint is running` lock.
+
+The workflows do not need sudo on a self-hosted runner. Where `sudo -n true` fails, `frontend-verify.yml` downloads the Playwright browser but cannot install its system libraries, so the host must already have them; the step warns when Playwright reports a missing package. `go-build-test.yml` uses the `gotestsum` on `PATH`, or installs it with `go install` into `GOPATH/bin`. The nanostack-dev 1340p slots have no sudo; infra's `ansible/playbooks/github-runners.yml` installs both there.
