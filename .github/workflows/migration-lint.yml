@@ -113,6 +113,10 @@ jobs:
       - name: Install squawk
         id: squawk
         shell: bash
+        env:
+          # Read only by install-squawk.sh: GitHub can throttle anonymous release
+          # downloads while authenticated ones still work.
+          GH_DOWNLOAD_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           dir="$(bash "$GITHUB_WORKSPACE/.ci-workflows/scripts/migration-lint/install-squawk.sh" "$RUNNER_TEMP/squawk")"

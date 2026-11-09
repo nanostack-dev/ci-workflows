@@ -12,6 +12,13 @@
 #
 # Linux uses the static musl builds: they run on any runner image, with no
 # dependency on its glibc.
+#
+# GitHub answers release downloads with transient 5xx, sometimes only to
+# anonymous callers (2026-11-09: 45 minutes of 504s). The download is retried
+# with backoff, and a token in GH_DOWNLOAD_TOKEN (migration-lint.yml passes the
+# workflow token) is sent so it keeps working while anonymous traffic is
+# throttled. SQUAWK_DOWNLOAD_URL replaces the release URL for the tests; the
+# pinned checksum still applies.
 set -euo pipefail
 
 SQUAWK_VERSION='2.68.0' # released 2026-10-08
@@ -50,13 +57,58 @@ sha256_of() {
   fi
 }
 
+# get_once URL OUT TOKEN: one GET; prints the HTTP status, 000 on a network
+# error or timeout. curl sends a -H Authorization header only to the host of
+# URL, never to the asset CDN GitHub redirects to.
+get_once() {
+  local status
+  if [[ -n "$3" ]]; then
+    status="$(curl --silent --show-error --location --connect-timeout 20 --max-time 300 \
+      --header "Authorization: Bearer $3" --output "$2" --write-out '%{http_code}' "$1")" || true
+  else
+    status="$(curl --silent --show-error --location --connect-timeout 20 --max-time 300 \
+      --output "$2" --write-out '%{http_code}' "$1")" || true
+  fi
+  echo "${status:-000}"
+}
+
+# download URL OUT: up to 5 attempts, 2/4/8/16 s apart, on a network error, a
+# timeout, 408, 429 or 5xx. Any other answer fails at once.
+download() {
+  local url="$1" out="$2" token="${GH_DOWNLOAD_TOKEN:-}" attempt status delay=2
+  for attempt in 1 2 3 4 5; do
+    status="$(get_once "$url" "$out" "$token")"
+    if [[ -n "$token" && ( "$status" == 401 || "$status" == 403 ) ]]; then
+      # A refused token must not block a download that works anonymously.
+      echo "GET ${url} refused GH_DOWNLOAD_TOKEN (${status}); continuing anonymously." >&2
+      token=''
+      status="$(get_once "$url" "$out" '')"
+    fi
+    case "$status" in
+      2??) return 0 ;;
+      000 | 408 | 429 | 5??) ;;
+      *)
+        echo "GET ${url} answered ${status}." >&2
+        return 1
+        ;;
+    esac
+    if [[ "$attempt" == 5 ]]; then
+      echo "GET ${url} answered ${status} after 5 attempts." >&2
+      return 1
+    fi
+    echo "GET ${url} answered ${status} (attempt ${attempt} of 5); retrying in ${delay}s." >&2
+    sleep "$delay"
+    delay=$((delay * 2))
+  done
+}
+
 mkdir -p "$dest"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-url="https://github.com/sbdchd/squawk/releases/download/v${SQUAWK_VERSION}/squawk-${platform}"
+url="${SQUAWK_DOWNLOAD_URL:-https://github.com/sbdchd/squawk/releases/download/v${SQUAWK_VERSION}/squawk-${platform}}"
 echo "Downloading squawk ${SQUAWK_VERSION} (${platform})" >&2
-curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --output "$tmp/squawk" "$url"
+download "$url" "$tmp/squawk"
 
 actual="$(sha256_of "$tmp/squawk")"
 if [[ "$actual" != "$expected" ]]; then
