@@ -36,6 +36,8 @@ jobs:
 
       - name: Install the pinned squawk
         id: squawk
+        env:
+          GH_DOWNLOAD_TOKEN: ${{ github.token }}
         run: echo "dir=$(scripts/migration-lint/install-squawk.sh "$RUNNER_TEMP/squawk")" >> "$GITHUB_OUTPUT"
 
       - name: Shellcheck
