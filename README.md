@@ -17,4 +17,4 @@ It should not contain deploy, preview, infra checkout, or environment-specific s
 
 ## Self-hosted runners
 
-[`docs/self-hosted-runner-flakes.md`](docs/self-hosted-runner-flakes.md) explains two failures that only happen when several jobs share one self-hosted host, and how these workflows prevent them: Storybook tests that hang or fail to import a module (Chrome's `net::ERR_NETWORK_CHANGED` on Docker interface changes), and golangci-lint's `parallel golangci-lint is running` lock.
+[`docs/self-hosted-runner-flakes.md`](docs/self-hosted-runner-flakes.md) explains four failures that only happen when several jobs share one self-hosted host, and how these workflows prevent them: Storybook tests that hang or fail to import a module (Chrome's `net::ERR_NETWORK_CHANGED` on Docker interface changes), golangci-lint's `parallel golangci-lint is running` lock, integration tests that fill the host's memory, and golangci-lint exiting with code 137.
