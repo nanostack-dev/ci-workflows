@@ -131,7 +131,7 @@ Rules:
 - Removed: GARM and Incus (`nanostack-ci`), the `nanostack-dagger` label, and
   every 1Password read on 1340p.
 - No GitHub runner on an internet-facing host (1340p, 8845hs). Prod is deployed from the Mac over the tailnet, through the restricted `deploy@8845hs` entry point of infra ADR 0008 (forced command, `from=` the Mac's tailnet address).
-- The Mac holds the keys to prod. Condition before prod secrets move there: FileVault on (manual unlock after reboot) or an accepted weaker alternative. Decided by Alexis.
+- The Mac holds the keys to prod. FileVault stays off so the Mac comes back unattended after a reboot (Alexis, 2026-11-11). Accepted risk: physical access to the Mac gives the deploy token. Controls: the token is a 1Password service account scoped to the items deploys read, stored in a root-owned file readable only by the deploy runner's user; if the Mac is lost or opened, revoke the service account in 1Password first.
 - Removed: the `nanostack-prod` runner on 8845hs.
 - When the Mac is off, deploys queue until it is back; builds continue on 1340p.
 
