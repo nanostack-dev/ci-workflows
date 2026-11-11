@@ -205,7 +205,7 @@ of the `ci/refactor` branches.
 |---|---|---|---|
 | anchor `go.yml`, whole run | 763 s (one `dagger-backend` job) | 265–319 s | backend checks on 9 parallel hosted runners, component tests in 3 parts |
 | anchor `e2e-app` | 264–385 s (median 288, 7 runs) | unchanged | 2 Playwright workers stay. 3 or 4 workers saved about 30 s but added an 8 s timeout flake in `templates.e2e.ts` (see principle 8) |
-| HomeScanner `React and Rust checks` | 352 s | 77–84 s on a warm slot (5 runs, 3 slots, no failure) | Cargo target directory kept in the slot (Rust 209 s → under 15 s); 5 browser suites in parallel, one per route viewport (182 s → 46 s) |
+| HomeScanner `React and Rust checks` | 352 s | 75–84 s on a warm slot (11 runs on 4 slots passed; 1 more failed uploading its screenshots: GitHub's artifact service answered HTML) | Cargo target directory kept in the slot (Rust 209 s → under 15 s); 5 browser suites in parallel, one per route viewport (182 s → 46 s) |
 | nanostack-framework `DB` | 364 s | 242 s wall (longest job 194 s, a postgres race suite; MariaDB's statement-cache job 225–303 s → 105 s) | race and statement-cache suites in parallel jobs; the postgres suite's two drivers in parallel jobs; CockroachDB no longer tested (ADR 0015); `ANALYZE TABLE` before the keyset contract's computed-key walks (MariaDB planned them badly on fresh tables: 46 s → 11 s per pass) |
 | echopoint `dagger-check` (PR) | 288 s median, 467 s p90 | unchanged | browser-app takes 134 s alone and 309 s next to the other checks on one host |
 
