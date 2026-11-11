@@ -1,0 +1,77 @@
+name: Workflow lint
+
+# Checks the caller's .github files: actionlint (syntax, expressions, shell)
+# and ci-lint (the organization's rules, docs/ci-principles.md).
+#
+# Callers run it on pull requests that touch .github/**:
+#
+#   on:
+#     pull_request:
+#       paths: ['.github/**']
+#   jobs:
+#     lint:
+#       uses: nanostack-dev/ci-workflows/.github/workflows/workflow-lint.yml@main
+#       with: { private: true }
+#
+# Both tools come from the Go module proxy, verified by the checksum database:
+# no binary download from github.com.
+
+on:
+  workflow_call:
+    inputs:
+      private:
+        description: The caller is a private repository (GitHub-hosted runners are not allowed)
+        required: true
+        type: boolean
+      runner:
+        description: Runner label
+        required: false
+        default: nanostack-light
+        type: string
+      extra_labels:
+        description: Comma-separated runner labels this repository may also use
+        required: false
+        default: ''
+        type: string
+
+permissions: {}
+
+jobs:
+  lint:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # The same commit as this reusable workflow, so ci-lint and its
+          # rules move together.
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci-workflows
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: .ci-workflows/go.mod
+          cache: false
+      - name: actionlint
+        env:
+          EXTRA: ${{ inputs.extra_labels }}
+        run: |
+          set -euo pipefail
+          labels="nanostack-light, nanostack-dev, nanostack-dagger-pool, nanostack-prod${EXTRA:+, $EXTRA}"
+          printf 'self-hosted-runner:\n  labels: [%s]\n' "$labels" > "$RUNNER_TEMP/actionlint.yaml"
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -config-file "$RUNNER_TEMP/actionlint.yaml" \
+            -ignore 'property "workflow_(repository|sha)" is not defined'
+      - name: ci-lint
+        env:
+          PRIVATE: ${{ inputs.private }}
+          EXTRA: ${{ inputs.extra_labels }}
+        run: |
+          set -euo pipefail
+          args=()
+          [ "$PRIVATE" = true ] && args+=(-private)
+          [ -n "$EXTRA" ] && args+=(-labels "$EXTRA")
+          (cd .ci-workflows && go build -o "$RUNNER_TEMP/ci-lint" ./cmd/ci-lint)
+          "$RUNNER_TEMP/ci-lint" "${args[@]}" .

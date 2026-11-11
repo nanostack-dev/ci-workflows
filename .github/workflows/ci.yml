@@ -1,30 +1,44 @@
-name: Migration Lint Tests
+name: CI
 
 # Tests the migration linter in scripts/migration-lint: its fixtures, the
 # pinned squawk release, and the reusable workflow that runs both. The other
 # workflows here have no self-test; this one exists because the linter is code,
 # not just YAML.
 
+# Every PR and push to main. No paths filter: every job takes under a minute.
 on:
   pull_request:
-    paths:
-      - 'scripts/migration-lint/**'
-      - '.github/workflows/migration-lint.yml'
-      - '.github/workflows/migration-lint-test.yml'
   push:
     branches: [ main ]
-    paths:
-      - 'scripts/migration-lint/**'
-      - '.github/workflows/migration-lint.yml'
-      - '.github/workflows/migration-lint-test.yml'
 
 permissions: {}
 
 concurrency:
-  group: migration-lint-test-${{ github.event.pull_request.number || github.sha }}
+  group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
+  workflow-lint:
+    name: ci-lint and actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+      - name: Test ci-lint
+        run: go test ./...
+      - name: Lint this repository's workflows with this commit's ci-lint
+        run: go run ./cmd/ci-lint .
+      - name: actionlint
+        run: |
+          printf 'self-hosted-runner:\n  labels: [nanostack-light, nanostack-dev, nanostack-dagger-pool, nanostack-prod]\n' > "$RUNNER_TEMP/actionlint.yaml"
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -config-file "$RUNNER_TEMP/actionlint.yaml" \
+            -ignore 'property "workflow_(repository|sha)" is not defined'
+
   unit:
     name: Fixtures and unit tests
     runs-on: ubuntu-latest

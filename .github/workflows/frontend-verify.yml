@@ -149,6 +149,9 @@ on:
         default: 30
         type: number
 
+# GITHUB_TOKEN starts with nothing; every job grants what it needs.
+permissions: {}
+
 jobs:
   verify:
     name: Verify ${{ inputs.app_name }} frontend

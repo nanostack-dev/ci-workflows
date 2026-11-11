@@ -37,6 +37,9 @@ on:
         description: '"true" when a changed file matched frontend_patterns'
         value: ${{ jobs.detect.outputs.frontend_changed }}
 
+# GITHUB_TOKEN starts with nothing; every job grants what it needs.
+permissions: {}
+
 jobs:
   detect:
     name: Detect changed surfaces

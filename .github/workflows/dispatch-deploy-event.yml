@@ -25,9 +25,13 @@ on:
       DEPLOY_TOKEN:
         required: false
 
+# GITHUB_TOKEN starts with nothing; every job grants what it needs.
+permissions: {}
+
 jobs:
   dispatch:
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -36,11 +40,18 @@ jobs:
       - name: Decide whether dispatch should run
         id: config
         shell: bash
+        env:
+          DEPLOY_REPOSITORY: ${{ inputs.deploy_repository }}
         run: |
           set -euo pipefail
           should_dispatch=true
-          if [[ -z '${{ inputs.deploy_repository }}' || -z "${DEPLOY_TOKEN:-}" ]]; then
+          if [[ -z "$DEPLOY_REPOSITORY" ]]; then
             should_dispatch=false
+          elif [[ -z "${DEPLOY_TOKEN:-}" ]]; then
+            # A missing token used to skip the dispatch and pass: the deploy
+            # silently never happened. A deploy that cannot be sent is a failure.
+            echo "::error::DEPLOY_TOKEN is empty: the $DEPLOY_REPOSITORY dispatch cannot be sent"
+            exit 1
           fi
           echo "should_dispatch=$should_dispatch" >> "$GITHUB_OUTPUT"
 
