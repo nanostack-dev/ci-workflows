@@ -144,10 +144,15 @@ on:
       deploy_image_tag:
         description: Image tag resolved for downstream deploy workflows
         value: ${{ jobs.docker-push.outputs.deploy_image_tag || jobs.docker-push-early.outputs.deploy_image_tag }}
+# GITHUB_TOKEN starts with nothing; every job grants what it needs.
+permissions: {}
+
 jobs:
   lint:
     name: Lint ${{ inputs.app_name }} app
     runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
     timeout-minutes: ${{ inputs.timeout_minutes }}
     if: ${{ !inputs.skip_lint }}
     steps:
@@ -212,6 +217,8 @@ jobs:
   tests:
     name: Test ${{ inputs.app_name }} app
     runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
     timeout-minutes: ${{ inputs.timeout_minutes }}
     # Independent of lint — run in parallel. Lint failure still fails the overall
     # reusable-workflow result, so deploy/preview dispatch stays gated on lint —
@@ -270,7 +277,8 @@ jobs:
           GOTMPDIR: ${{ runner.environment != 'github-hosted' && runner.temp || '' }}
         run: |
           set -euo pipefail
-          export PATH="$(go env GOPATH)/bin:$PATH"
+          gopath="$(go env GOPATH)"
+          export PATH="$gopath/bin:$PATH"
           # GOFLAGS reaches every suite, including the ones that run go test
           # through gotestsum or a login shell. An explicit -p in a suite's
           # command still wins.

@@ -1,0 +1,120 @@
+name: Preview
+
+# Raises and tears down a pull request's preview environment from the
+# description checkbox (`- [x] ... <!-- preview-deploy -->`). Callers forward
+# their `pull_request: [edited, closed]` events here; see docs/ci-flows.md.
+#
+# Flow:
+#   edited, checkbox turned on   -> re-run the PR's latest go.yml run; it reads
+#                                   the live checkbox and dispatches preview-upsert
+#   edited, checkbox turned off  -> dispatch preview-destroy
+#   closed, checkbox on          -> dispatch preview-destroy
+#   anything else                -> nothing
+#
+# Invariants (with their incident):
+# - Never cancelled: a cancelled destroy leaks the preview. One group per PR
+#   serializes an up and a down.
+# - The description is read from the event file, never through an expression:
+#   it is author-controlled text.
+# - A closed PR whose checkbox is off dispatches nothing. Every destroy costs
+#   infra a 1Password read; on 2026-11-09 closing 13 PRs spent the daily read
+#   limit and blocked deploys for about 2 h. infra preview-gc.yml sweeps any
+#   preview this misses every night.
+# - Fork PRs never reach the deploy token.
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: Service name in infra router.yml (anchor, echopoint)
+        required: true
+        type: string
+      runner:
+        description: Runner label (public repos pass ubuntu-latest)
+        required: false
+        default: nanostack-light
+        type: string
+      build_workflow:
+        description: Workflow file whose PR run builds the preview image
+        required: false
+        default: go.yml
+        type: string
+    secrets:
+      DEPLOY_TOKEN:
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: preview-${{ github.repository }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      ACTION: ${{ github.event.action }}
+      SERVICE: ${{ inputs.service }}
+      BUILD_WORKFLOW: ${{ inputs.build_workflow }}
+      DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+    steps:
+      - name: Decide
+        id: decide
+        run: |
+          set -euo pipefail
+          marker='-[[:space:]]*\[[xX]\].*<!--[[:space:]]*preview-deploy[[:space:]]*-->'
+          checked() { printf '%s\n' "$1" | grep -qE -e "$marker"; }
+          after="$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")"
+          decision=none
+          case "$ACTION" in
+            closed)
+              checked "$after" && decision=down ;;
+            edited)
+              if jq -e '.changes.body' "$GITHUB_EVENT_PATH" >/dev/null; then
+                before="$(jq -r '.changes.body.from // ""' "$GITHUB_EVENT_PATH")"
+                if checked "$after" && ! checked "$before"; then decision=up
+                elif ! checked "$after" && checked "$before"; then decision=down
+                fi
+              fi ;;
+          esac
+          echo "decision=$decision" >> "$GITHUB_OUTPUT"
+          echo "Preview: $ACTION -> $decision" >> "$GITHUB_STEP_SUMMARY"
+
+      # The preview image is tagged from the merge commit the build ran on, and
+      # no API returns that commit later, so a re-run is the only way to raise a
+      # preview without a push. The build reads the checkbox live.
+      - name: Re-run the build so it dispatches the preview
+        if: steps.decide.outputs.decision == 'up'
+        run: |
+          set -euo pipefail
+          run_id=$(gh api "repos/$REPO/actions/workflows/$BUILD_WORKFLOW/runs?event=pull_request&head_sha=$HEAD_SHA&per_page=1" \
+            -q '.workflow_runs[0].id // empty')
+          if [ -z "$run_id" ]; then
+            gh pr comment "$PR_NUMBER" -R "$REPO" --body 'No build run exists for this commit, so there is no image to deploy. Push a commit; the preview starts after its build.'
+            exit 0
+          fi
+          status=$(gh api "repos/$REPO/actions/runs/$run_id" -q .status)
+          if [ "$status" != completed ]; then
+            echo "Build $run_id is $status; it reads the checkbox when it reaches the dispatch job."
+            exit 0
+          fi
+          gh api -X POST "repos/$REPO/actions/runs/$run_id/rerun" >/dev/null
+
+      - name: Dispatch preview-destroy
+        if: steps.decide.outputs.decision == 'down'
+        run: |
+          set -euo pipefail
+          jq -n --arg s "$SERVICE" --arg r "$REPO" --arg sha "$HEAD_SHA" --arg ref "$HEAD_REF" --argjson pr "$PR_NUMBER" \
+            '{event_type:"preview-destroy", client_payload:{service:$s, source_repository:$r, source_ref:$sha, pr_number:$pr, branch_ref:$ref}}' \
+            | GH_TOKEN="$DEPLOY_TOKEN" gh api -X POST repos/nanostack-dev/infra/dispatches --input - >/dev/null
+          echo "Dispatched preview-destroy for $SERVICE PR $PR_NUMBER" >> "$GITHUB_STEP_SUMMARY"

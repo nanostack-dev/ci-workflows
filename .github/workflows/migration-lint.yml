@@ -72,6 +72,9 @@ on:
         default: 10
         type: number
 
+# GITHUB_TOKEN starts with nothing; every job grants what it needs.
+permissions: {}
+
 jobs:
   migration-lint:
     name: Migration lint

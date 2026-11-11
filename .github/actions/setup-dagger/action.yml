@@ -30,7 +30,9 @@ runs:
       shell: bash
       env:
         VERSION: ${{ inputs.version }}
-        BIN: ${{ runner.temp }}/dagger-bin
+        # The tool cache outlives the job on a persistent runner, so the CLI is
+        # downloaded once per host and version, not once per job.
+        BIN: ${{ runner.tool_cache }}/dagger/${{ inputs.version }}
       run: |
         set -euo pipefail
         # Checksums from https://dl.dagger.io/dagger/releases/<version>/checksums.txt.
@@ -43,13 +45,16 @@ runs:
         esac
         if ! "$BIN/dagger" version 2>/dev/null | grep -q "$VERSION"; then
           archive="dagger_${VERSION}_${platform}.tar.gz"
-          tmp="$(mktemp -d)"
+          # Same filesystem as $BIN so the final mv is a rename (TMPDIR is tmpfs on 1340p).
+          mkdir -p "$(dirname "$BIN")"
+          tmp="$(mktemp -d "$(dirname "$BIN")/.download.XXXXXX")"
           trap 'rm -rf "$tmp"' EXIT
-          curl -fsSL --retry 3 -o "$tmp/$archive" "https://dl.dagger.io/dagger/releases/${VERSION#v}/$archive"
+          curl -fsSL --retry 5 --retry-all-errors -o "$tmp/$archive" "https://dl.dagger.io/dagger/releases/${VERSION#v}/$archive"
           echo "$sum  $tmp/$archive" | sha256sum -c - >/dev/null 2>&1 \
             || echo "$sum  $tmp/$archive" | shasum -a 256 -c - >/dev/null
+          tar -xzf "$tmp/$archive" -C "$tmp" dagger
           mkdir -p "$BIN"
-          tar -xzf "$tmp/$archive" -C "$BIN" dagger
+          mv -f "$tmp/dagger" "$BIN/dagger"   # atomic: a half-written CLI is never on PATH
         fi
         echo "$BIN" >> "$GITHUB_PATH"
         "$BIN/dagger" version
