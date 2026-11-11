@@ -119,7 +119,7 @@ internet, so it is the only place a deploy token lives.
 | 1340p | Builds and tests | `nanostack-light` (seconds-long jobs), `nanostack-build` (one heavy job) | No. No 1Password token, no deploy key |
 | M2 devbox, job VM | Builds and tests: one throwaway Lima VM per job, pf fence (no tailnet, no LAN) | `nanostack-build` | No |
 | M2 devbox, deploy runner | Dev deploys, previews, dev infra operations. Never runs pull request code | `nanostack-deploy` | Yes: the 1Password token, in a root-owned file on the Mac, not in GitHub secrets |
-| 8845hs | Prod deploys and prod backups (open question: move to the Mac?) | `nanostack-prod` | Prod only |
+| 8845hs | Prod deploys and prod backups, on the prod host itself | `nanostack-prod` | Prod only: a prod-scoped 1Password service account, not the org-wide token |
 | GitHub-hosted | Public repositories | `ubuntu-latest` | No |
 
 Rules:
@@ -129,6 +129,7 @@ Rules:
   the Mac's job VM.
 - Removed: GARM and Incus (`nanostack-ci`), the `nanostack-dagger` label, and
   every 1Password read on 1340p.
+- Prod stays on 8845hs: a runner on the prod host adds little risk (a compromised host already owns prod), and deploying prod from the Mac would open a new path into prod. Its token is narrowed to prod.
 - When the Mac is off, deploys queue until it is back; builds continue on 1340p.
 
 ## Measurements
