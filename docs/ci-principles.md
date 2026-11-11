@@ -125,7 +125,8 @@ average. The 2026-11-11 pass (numbers in [Job durations](#job-durations)):
 - **Warm runners: keep state between runs.** A persistent self-hosted slot
   keeps what a cold one rebuilds. HomeScanner keeps Cargo's target directory in
   the slot's `HOME` (not the workspace, which checkout cleans): clippy, tests
-  and the release build went from 209 s to under 15 s.
+  and the release build went from 209 s to under 15 s. A slot's first run is
+  still cold: 162–217 s of Rust (measured on 3 slots).
 - **Independent suites run in parallel.** Browser suites that each seed their
   own fixture and start their own server do not need to wait for each other
   (HomeScanner: one server per route viewport, 182 s → 46 s).
@@ -199,7 +200,7 @@ of the `ci/refactor` branches.
 | Repository: job | Before | After | Change |
 |---|---|---|---|
 | anchor `go.yml`, whole run | 763 s (one `dagger-backend` job) | 265–319 s | backend checks on 9 parallel hosted runners, component tests in 3 parts |
-| anchor `e2e-app` | 330 s | about 290 s | 3 Playwright workers instead of 2: the 70 tests take 2.4–3.3 min (median 2.8, 5 runs, no failure) against 3.0–3.5 min (median 3.4, 6 runs). 4 workers: median 2.7 min but 1 failed run in 5 (8 s timeouts) |
+| anchor `e2e-app` | 330 s | 223–300 s (median 258, 5 runs) | 3 Playwright workers instead of 2: the 70 tests take 2.4–3.3 min (median 2.8, 5 runs, no failure) against 3.0–3.5 min (median 3.4, 6 runs). 4 workers: median 2.7 min but 1 failed run in 5 (8 s timeouts) |
 | HomeScanner `React and Rust checks` | 352 s | 77–84 s on a warm slot (6 runs, 3 slots, no failure) | Cargo target directory kept in the slot (Rust 209 s → under 15 s); 5 browser suites in parallel, one per route viewport (182 s → 46 s) |
 | nanostack-framework `DB` | 364 s | 231–301 s (set by MariaDB's statement-cache job; every other job ≤ 196 s) | race and statement-cache suites in parallel jobs; the postgres suite's two drivers in parallel jobs; CockroachDB no longer tested (ADR 0015) |
 | echopoint `dagger-check` (PR) | 288 s median, 467 s p90 | unchanged | browser-app takes 134 s alone and 309 s next to the other checks on one host |
