@@ -110,17 +110,26 @@ decision: keep it in the PR gate, move it out (nightly or local), or replace it.
 
 ## Runner layout
 
-| Label | Hosts | Use |
-|---|---|---|
-| `nanostack-light` | 1340p `l1`–`l4` (1 GiB each) | Seconds-long jobs: change detection, `ci-ok`, dispatches, lint |
-| `nanostack-dev` | 1340p `r1`–`r4` (8 GiB each) | Builds, deploys to dev, anything without a browser suite |
-| `nanostack-dagger-pool` | 1340p `r1` and the devbox (M2) | Heavy `dagger check`: at most one per host |
-| `nanostack-prod` | 8845hs | Prod deploys and prod data only |
-| `ubuntu-latest` | GitHub-hosted | Public repositories only |
+Decided with Alexis on 2026-11-11. 1340p serves dev websites to the internet,
+so it holds no secrets. The Mac (M2 devbox) is not reachable from the
+internet, so it is the only place a deploy token lives.
 
-GARM (`nanostack-ci`) and the 1340p `nanostack-dagger` label are retired from
-the workflows; only infra's `garm-runner-image.yml` still targets GARM.
-Turning the GARM pool off frees the 8 GiB its idle VM holds on 1340p.
+| Host | Role | Labels | Holds secrets |
+|---|---|---|---|
+| 1340p | Builds and tests | `nanostack-light` (seconds-long jobs), `nanostack-build` (one heavy job) | No. No 1Password token, no deploy key |
+| M2 devbox, job VM | Builds and tests: one throwaway Lima VM per job, pf fence (no tailnet, no LAN) | `nanostack-build` | No |
+| M2 devbox, deploy runner | Dev deploys, previews, dev infra operations. Never runs pull request code | `nanostack-deploy` | Yes: the 1Password token, in a root-owned file on the Mac, not in GitHub secrets |
+| 8845hs | Prod deploys and prod backups (open question: move to the Mac?) | `nanostack-prod` | Prod only |
+| GitHub-hosted | Public repositories | `ubuntu-latest` | No |
+
+Rules:
+- A job that reads a secret runs on `nanostack-deploy` or `nanostack-prod`.
+  Nothing else. ci-lint enforces it (planned rule `secret-runner`).
+- `nanostack-build` takes at most one heavy job per host: one 1340p slot and
+  the Mac's job VM.
+- Removed: GARM and Incus (`nanostack-ci`), the `nanostack-dagger` label, and
+  every 1Password read on 1340p.
+- When the Mac is off, deploys queue until it is back; builds continue on 1340p.
 
 ## Measurements
 
