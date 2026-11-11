@@ -129,7 +129,8 @@ average. The 2026-11-11 pass (numbers in [Job durations](#job-durations)):
 - **Independent suites run in parallel.** Browser suites that each seed their
   own fixture and start their own server do not need to wait for each other
   (HomeScanner: one server per route viewport, 182 s → 46 s).
-- **Use the cores you have.** Playwright on a 4 vCPU runner: 4 workers, not 2.
+- **Use the cores you have.** Playwright on a 4 vCPU runner: 4 workers, not 2
+  (median 3.4 → 2.7 min).
 - **Self-hosted heavy jobs are CPU-bound.** echopoint's checks share one host
   (principle 4), so reordering them only moves the tail. `dagger check` starts
   checks in a fixed order, whatever order the command line gives.
@@ -197,9 +198,9 @@ of the `ci/refactor` branches.
 | Repository: job | Before | After | Change |
 |---|---|---|---|
 | anchor `go.yml`, whole run | 763 s (one `dagger-backend` job) | 265–319 s | backend checks on 9 parallel hosted runners, component tests in 3 parts |
-| anchor `e2e-app` | 330 s | 210 s | 4 Playwright workers instead of 2 (70 tests: 3.4 min → 2.3 min) |
+| anchor `e2e-app` | 330 s | 210–276 s | 4 Playwright workers instead of 2: the 70 tests take 2.3–3.1 min (median 2.7, 3 runs) against 3.0–3.5 min (median 3.4, 6 runs) |
 | HomeScanner `React and Rust checks` | 352 s | 84 s on a warm slot | Cargo target directory kept in the slot (Rust 209 s → under 15 s); 5 browser suites in parallel, one per route viewport (182 s → 46 s) |
-| nanostack-framework `DB` | 364 s | 314 s | race and statement-cache suites in parallel jobs; CockroachDB (2 jobs, 270–340 s) is now the longest |
+| nanostack-framework `DB` | 364 s | 231–245 s | race and statement-cache suites in parallel jobs; the postgres suite's two drivers in parallel jobs; CockroachDB no longer tested (ADR 0015) |
 | echopoint `dagger-check` (PR) | 288 s median, 467 s p90 | unchanged | browser-app takes 134 s alone and 309 s next to the other checks on one host |
 
 What is left, and why it stays:
@@ -207,10 +208,15 @@ What is left, and why it stays:
 - anchor: each runner pays about 130 s of cold engine start and compile. A
   warm cache needs a self-hosted runner, which a public repository should
   not use for pull requests from forks.
-- echopoint: the checks are CPU-bound on one host. Giving one pull request
+- echopoint: the checks are CPU-bound on one host. `DAGGER_CHECK_PARALLEL` 8
+  against 4, same host, cache busted: 267 s against 273 s on 1340p-r1, 251 s
+  against 243 s on the devbox, so the limit stays 4. Giving one pull request
   both heavy slots (1340p-r1 and the devbox) would roughly halve its time and
   halve how many pull requests run at once.
-- nanostack-framework: framework ADR 0015 drops CockroachDB; its two jobs are
-  the longest.
+- nanostack-framework: MariaDB's statement-cache job (225–303 s) spends 153 s
+  of its 164 s of test time in `TestKeysetContract`'s correlated-subquery walk
+  (51 s per pass, three passes). The walk is CPU, not fsync: non-durable
+  InnoDB settings and a tmpfs data directory changed nothing. Running the
+  contract in the first pass only would save about 100 s and drop a check.
 - anchor `component-tests`: test names come from the sources, every third
   test per part; a part that ran fewer tests than it selected fails.
