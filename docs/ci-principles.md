@@ -106,6 +106,8 @@ decision: keep it in the PR gate, move it out (nightly or local), or replace it.
 | echopoint `storybook-test` (Vitest browser mode, 1,481 stories) | Failed in 15 of the last 53 failed echopoint runs. The benchmark shows why: 0 of 10 failures when its job runs alone on a host, 5 of 10 when two heavy jobs share 1340p. Storybook's docs name the same cause: errors "in CI environments when running a large number of tests simultaneously". Failed 3 of 3 atelier runs that shared the engine. | Contention, not design. Decided 2026-11-11: stays in the required gate; one heavy job per host keeps it green. |
 | echopoint `browser-app` (full stack in Docker-in-Docker: backend build, Anchor, Postgres, Redis, Mailpit, WireMock, cloud worker, real Clerk) | Failed in 27 of 53 failed runs: 11 from `anchor:latest` (fixed by the pin), at least 3 webServer boot timeouts (15 min, cloud worker health), 1 GitHub 504, and real test failures. | Keep, now hermetic. Revisit after two weeks of data with the pin. If boot timeouts remain, move it to post-merge on `main`. |
 | echopoint `motion` (viewport animation checks on 3 viewports) | Failed in 6 of 53; 0 of 15 in the benchmark (alone or paired). | Stays in the required gate (same decision as Storybook). |
+| anchor `e2e-app`: `email.e2e.ts` "email examples wait for saved data" | Fails with `route.fulfill: Fetch response has been disposed` at 2 workers (2026-11-10) and at 3 (2026-11-11): the test holds the examples GET with `page.route`, most likely the app drops that request, and the held response is gone before `fulfill`. | A test bug, not load. Fix the test: fulfill only a request that is still live, or hold the response in the app's API mock. |
+| anchor `e2e-app`: `templates.e2e.ts` 8 s action timeout | Only at 3 or more Playwright workers on the 4 vCPU runner (1 run in 8 at 3, 1 in 5 at 4); never at 2. | Contention. Keep 2 workers. |
 | Post-deploy gate flows against shared dev | See principle 2. | Keep as a deploy gate; never as a PR gate. |
 | `tailscale/github-action` in CI | Can log the host itself out of the tailnet (infra github-runners.md). | Keep only in infra deploy jobs. |
 
@@ -130,9 +132,11 @@ average. The 2026-11-11 pass (numbers in [Job durations](#job-durations)):
 - **Independent suites run in parallel.** Browser suites that each seed their
   own fixture and start their own server do not need to wait for each other
   (HomeScanner: one server per route viewport, 182 s → 46 s).
-- **Use the cores you have, not more.** Playwright on a 4 vCPU runner: 3
-  workers (median 3.4 → 2.8 min). 4 workers were barely faster and failed a
-  run in 5 on timeouts: speed that adds a flake is a loss (principle 7).
+- **Count failures, not only minutes.** Playwright on anchor's 4 vCPU runner:
+  3 workers cut the tests from a median 3.4 to 2.8 min and 4 workers to 2.7
+  min, but both made `templates.e2e.ts` time out on an 8 s action (1 run in 8,
+  1 in 5), which never happened at 2 workers. Five clean runs proved nothing:
+  the flake showed up in runs 6 to 8. anchor stays at 2 workers.
 - **Self-hosted heavy jobs are CPU-bound.** echopoint's checks share one host
   (principle 4), so reordering them only moves the tail. `dagger check` starts
   checks in a fixed order, whatever order the command line gives.
@@ -200,9 +204,9 @@ of the `ci/refactor` branches.
 | Repository: job | Before | After | Change |
 |---|---|---|---|
 | anchor `go.yml`, whole run | 763 s (one `dagger-backend` job) | 265–319 s | backend checks on 9 parallel hosted runners, component tests in 3 parts |
-| anchor `e2e-app` | 330 s | 223–300 s (median 258, 5 runs) | 3 Playwright workers instead of 2: the 70 tests take 2.4–3.3 min (median 2.8, 5 runs, no failure) against 3.0–3.5 min (median 3.4, 6 runs). 4 workers: median 2.7 min but 1 failed run in 5 (8 s timeouts) |
-| HomeScanner `React and Rust checks` | 352 s | 77–84 s on a warm slot (6 runs, 3 slots, no failure) | Cargo target directory kept in the slot (Rust 209 s → under 15 s); 5 browser suites in parallel, one per route viewport (182 s → 46 s) |
-| nanostack-framework `DB` | 364 s | 231–301 s (set by MariaDB's statement-cache job; every other job ≤ 196 s) | race and statement-cache suites in parallel jobs; the postgres suite's two drivers in parallel jobs; CockroachDB no longer tested (ADR 0015) |
+| anchor `e2e-app` | 264–385 s (median 288, 7 runs) | unchanged | 2 Playwright workers stay. 3 or 4 workers saved about 30 s but added an 8 s timeout flake in `templates.e2e.ts` (see principle 8) |
+| HomeScanner `React and Rust checks` | 352 s | 77–84 s on a warm slot (5 runs, 3 slots, no failure) | Cargo target directory kept in the slot (Rust 209 s → under 15 s); 5 browser suites in parallel, one per route viewport (182 s → 46 s) |
+| nanostack-framework `DB` | 364 s | 242 s wall (longest job 194 s, a postgres race suite; MariaDB's statement-cache job 225–303 s → 105 s) | race and statement-cache suites in parallel jobs; the postgres suite's two drivers in parallel jobs; CockroachDB no longer tested (ADR 0015); `ANALYZE TABLE` before the keyset contract's computed-key walks (MariaDB planned them badly on fresh tables: 46 s → 11 s per pass) |
 | echopoint `dagger-check` (PR) | 288 s median, 467 s p90 | unchanged | browser-app takes 134 s alone and 309 s next to the other checks on one host |
 
 What is left, and why it stays:
@@ -215,10 +219,10 @@ What is left, and why it stays:
   against 243 s on the devbox, so the limit stays 4. Giving one pull request
   both heavy slots (1340p-r1 and the devbox) would roughly halve its time and
   halve how many pull requests run at once.
-- nanostack-framework: MariaDB's statement-cache job (225–303 s) spends 153 s
-  of its 164 s of test time in `TestKeysetContract`'s correlated-subquery walk
-  (51 s per pass, three passes). The walk is CPU, not fsync: non-durable
-  InnoDB settings and a tmpfs data directory changed nothing. Running the
-  contract in the first pass only would save about 100 s and drop a check.
+- nanostack-framework: the postgres race suites (130–194 s across runners
+  for the same work) spend most of their test time under the race detector:
+  the two keyset walk tests take 63 s with `-race` and 13 s without. Running
+  the read-only walks as parallel subtests would save about 25 s, but needs a
+  lock in the upstream go-jet test loggers. Not worth the divergence.
 - anchor `component-tests`: test names come from the sources, every third
   test per part; a part that ran fewer tests than it selected fails.
