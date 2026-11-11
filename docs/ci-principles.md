@@ -118,18 +118,20 @@ internet, so it is the only place a deploy token lives.
 |---|---|---|---|
 | 1340p | Builds and tests | `nanostack-light` (seconds-long jobs), `nanostack-build` (one heavy job) | No. No 1Password token, no deploy key |
 | M2 devbox, job VM | Builds and tests: one throwaway Lima VM per job, pf fence (no tailnet, no LAN) | `nanostack-build` | No |
-| M2 devbox, deploy runner | Dev deploys, previews, dev infra operations. Never runs pull request code | `nanostack-deploy` | Yes: the 1Password token, in a root-owned file on the Mac, not in GitHub secrets |
-| 8845hs | Prod deploys and prod backups, on the prod host itself | `nanostack-prod` | Prod only: a prod-scoped 1Password service account, not the org-wide token |
+| M2 devbox, deploy runner | Every deploy, dev and prod, previews, infra operations, prod backups. Never runs pull request code | `nanostack-deploy` | Yes: the 1Password token, in a root-owned file on the Mac, not in GitHub secrets |
+| 8845hs | Prod host only. No GitHub runner: it is internet-facing | none | Its own service secrets |
 | GitHub-hosted | Public repositories | `ubuntu-latest` | No |
 
 Rules:
-- A job that reads a secret runs on `nanostack-deploy` or `nanostack-prod`.
+- A job that reads a secret runs on `nanostack-deploy`.
   Nothing else. ci-lint enforces it (planned rule `secret-runner`).
 - `nanostack-build` takes at most one heavy job per host: one 1340p slot and
   the Mac's job VM.
 - Removed: GARM and Incus (`nanostack-ci`), the `nanostack-dagger` label, and
   every 1Password read on 1340p.
-- Prod stays on 8845hs: a runner on the prod host adds little risk (a compromised host already owns prod), and deploying prod from the Mac would open a new path into prod. Its token is narrowed to prod.
+- No GitHub runner on an internet-facing host (1340p, 8845hs). Prod is deployed from the Mac over the tailnet, through the restricted `deploy@8845hs` entry point of infra ADR 0008 (forced command, `from=` the Mac's tailnet address).
+- The Mac holds the keys to prod. Condition before prod secrets move there: FileVault on (manual unlock after reboot) or an accepted weaker alternative. Decided by Alexis.
+- Removed: the `nanostack-prod` runner on 8845hs.
 - When the Mac is off, deploys queue until it is back; builds continue on 1340p.
 
 ## Measurements
