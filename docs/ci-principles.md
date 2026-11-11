@@ -54,12 +54,13 @@ Measured on 2026-11-11, echopoint full `dagger check` with every cache busted
 
 | Case | Wall time | Host |
 |---|---|---|
-| devbox (M2, one Lima VM) alone | see Measurements | 16 GB VM |
-| 1340p alone | see Measurements | load ≈ 20, engine ≈ 16 GiB |
-| 1340p, two jobs at once | see Measurements | load 92–95 on 16 threads, 2 GB free, engine 18.8 GiB, dev Swarm on the same host |
+| devbox (M2, one Lima VM) alone | median 247 s (240–375), 0 of 5 failed | 16 GB VM |
+| 1340p alone | median 297 s (287–325), 1 of 5 failed (one browser-app test) | peak load 37, 5 GB free, engine 17.7 GiB |
+| 1340p, two jobs at once | median 671 s (459–840), 7 of 10 failed | peak load 335 on 16 threads, 0 GB free, engine 21.3 GiB, dev Swarm on the same host |
 
-Two jobs at once on `1340p` are slower than two jobs in sequence and fail
-checks that pass alone. Rule: `1340p` carries the `nanostack-dagger-pool`
+Two jobs at once on `1340p` take longer than the same two jobs in sequence
+(671 s each against 2 × 297 s) and fail checks that pass alone: Storybook
+failed 5 of 10 times in the pair and 0 of 10 times alone (1340p and devbox). Rule: `1340p` carries the `nanostack-dagger-pool`
 label on one slot only; the devbox is the second slot. See
 [Runner layout](#runner-layout).
 
@@ -102,9 +103,9 @@ decision: keep it in the PR gate, move it out (nightly or local), or replace it.
 
 | Check | Evidence | Recommendation |
 |---|---|---|
-| echopoint `storybook-test` (Vitest browser mode, 1,481 stories) | Failed in 15 of the last 53 failed echopoint runs. Storybook's own docs say "Failed to fetch dynamically imported module" and iframe errors occur "in CI environments when running a large number of tests simultaneously". Failed 3 of 3 atelier runs that shared the engine. | Out of the PR gate. Keep `storybook-build` required (it catches compile errors). Run the stories a change reaches locally and the full suite nightly (`frontend-full.yml`). You said on 2026-11-09: "I think I will drop storybook on the CI and keep it only local". |
+| echopoint `storybook-test` (Vitest browser mode, 1,481 stories) | Failed in 15 of the last 53 failed echopoint runs. The benchmark shows why: 0 of 10 failures when its job runs alone on a host, 5 of 10 when two heavy jobs share 1340p. Storybook's docs name the same cause: errors "in CI environments when running a large number of tests simultaneously". Failed 3 of 3 atelier runs that shared the engine. | Contention, not design. With one heavy job per host it can stay in the gate. The `ci/refactor` branch moves it to a non-required job; revert that if you keep it blocking. |
 | echopoint `browser-app` (full stack in Docker-in-Docker: backend build, Anchor, Postgres, Redis, Mailpit, WireMock, cloud worker, real Clerk) | Failed in 27 of 53 failed runs: 11 from `anchor:latest` (fixed by the pin), at least 3 webServer boot timeouts (15 min, cloud worker health), 1 GitHub 504, and real test failures. | Keep, now hermetic. Revisit after two weeks of data with the pin. If boot timeouts remain, move it to post-merge on `main`. |
-| echopoint `motion` (viewport animation checks on 3 viewports) | Failed in 6 of 53. Timing-based by nature. | Same as Storybook. |
+| echopoint `motion` (viewport animation checks on 3 viewports) | Failed in 6 of 53; 0 of 15 in the benchmark (alone or paired). | Same decision as Storybook. |
 | Post-deploy gate flows against shared dev | See principle 2. | Keep as a deploy gate; never as a PR gate. |
 | `tailscale/github-action` in CI | Can log the host itself out of the tailnet (infra github-runners.md). | Keep only in infra deploy jobs. |
 
@@ -137,7 +138,27 @@ Rules:
 
 ## Measurements
 
-Benchmark: echopoint `ci/bench-flake`, `go.yml` replaced by a cache-busted full
-`dagger check` (a comment appended to one frontend and one Go file per run),
-dispatched 5 rounds × {1340p alone + devbox, 1340p pair}. Raw logs: the run
-IDs below. Results are filled in by the benchmark report.
+Benchmark, 2026-11-11 15:19–17:00 UTC: echopoint branch `ci/bench-flake`,
+`go.yml` replaced by a full `dagger check` with every cache busted (a comment
+appended to one frontend and one Go file per run, no changed-files list, so
+all 1,481 stories ran). 5 rounds, each: one job on 1340p and one on the devbox
+at once, then two jobs on 1340p at once. A sampler on 1340p recorded load,
+free memory and engine memory every 15 s.
+
+| Case | Runs | Median | Range | Failed | Failing checks |
+|---|---|---|---|---|---|
+| devbox alone | 5 | 247 s | 240–375 s | 0 | none |
+| 1340p alone | 5 | 297 s | 287–325 s | 1 | browser-app (status-page tests, round 1) |
+| 1340p pair | 10 | 671 s | 459–840 s | 7 | storybook-test 5, browser-app 5, go-test 2, browser-tooling 1 |
+
+Flake rate before this refactor (attempt 1 failed, a rerun of the same commit
+passed; `gh run list`, 2026-11-11): echopoint 9.1 % (23 of 254 runs in 6
+days), atelier 9.8 %, nanostack-framework 3.2 %, anchor 2.6 %,
+homescanner 1.8 %, design system 1.1 %, echopoint-runner 0.7 %,
+echopoint-cli 0.6 %.
+
+Failing checks in the last 53 failed echopoint `go.yml` runs (devbox proof
+runs excluded): browser-app 27 (11 of them `anchor:latest`), go-test 15,
+storybook-test 15, api-client/stale 7, motion 6, go-lint 4. No
+`ERR_NETWORK_CHANGED` and no dynamic-import failure inside Dagger; 3 runs were
+OOM-killed (exit 137).
