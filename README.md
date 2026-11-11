@@ -11,6 +11,8 @@ This repo is intended to contain only verification and build workflows such as:
 - container image publishing
 - migration lint: pinned squawk plus custom checks on the Postgres migrations a pull request adds ([guide](docs/technical/migration-lint.md))
 - repository dispatch handoff to the private deploy repo
+- `workflow-lint.yml`: actionlint plus `cmd/ci-lint`, the organization's CI rules ([principles](docs/ci-principles.md), [per-file flows](docs/ci-flows.md))
+- `preview.yml`: raise and tear down a pull request's preview from its description checkbox
 - `setup-dagger`, a composite action that installs the pinned Dagger CLI for `dagger check` ([guide](docs/technical/dagger.md))
 
 It should not contain deploy, preview, infra checkout, or environment-specific secret orchestration.

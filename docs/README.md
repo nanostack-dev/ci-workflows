@@ -2,6 +2,8 @@
 
 Start with [agent guidance](../AGENTS.md) and [vocabulary](../CONTEXT.md).
 
+- [CI principles](ci-principles.md): the organization's CI rules, the incident behind each, runner layout, and what is flaky by design. `cmd/ci-lint` enforces them.
+- [CI flows](ci-flows.md): what every workflow file in every repository must do.
 - [Architecture and contracts](technical/architecture.md).
 - [Migration lint](technical/migration-lint.md): the safety linter for Postgres migrations, its rules, exclusions and opt-outs.
 - [Dagger CI](technical/dagger.md): the `setup-dagger` action, where the engine runs on each runner type, conventions for checks, and the upgrade procedure.
