@@ -41,7 +41,7 @@ pull_request touching .github/**
 
 | File | Trigger | Flow | Must keep |
 |---|---|---|---|
-| `go.yml` | PR (no paths), push main (paths), dispatch | `detect_changes` → `dagger-check` (every check except storybook-test and motion) ∥ `dagger-publish` ∥ `migrations-verify` ∥ `migration-lint` → `ci-ok`; push main: → `dispatch-deploy-dev` or `dispatch-frontend-deploy-dev`; PR: `preview-flag` → `dispatch-preview-upsert`; PR: `frontend-tests` (not required) after `dagger-check` | `queue: max` on main pushes (deploys in merge order); `ci-ok` required; deploys gate on `dagger-check` |
+| `go.yml` | PR (no paths), push main (paths), dispatch | `detect_changes` → `dagger-check` (every check, on `nanostack-dagger-pool`) ∥ `dagger-publish` ∥ `migrations-verify` ∥ `migration-lint` → `ci-ok`; push main: → `dispatch-deploy-dev` or `dispatch-frontend-deploy-dev`; PR: `preview-flag` → `dispatch-preview-upsert` | `queue: max` on main pushes (deploys in merge order); `ci-ok` required; deploys gate on `dagger-check` |
 | `preview.yml` | PR edited/closed | → ci-workflows `preview.yml` (service echopoint) | Stacked PRs may own previews |
 | `anchor-pin.yml` | daily, dispatch | resolve `anchor:latest` digest → if new: commit to `chore/anchor-pin` → PR → `go.yml` dispatch on the branch | Needs "Allow GitHub Actions to create pull requests" for the PR step |
 | `frontend-full.yml` | nightly, dispatch | full `storybook-test` + `motion` (every story) | Not a gate; its failures are the Storybook backlog |

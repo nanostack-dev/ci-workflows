@@ -96,16 +96,16 @@ Source: GitHub, "Troubleshooting required status checks".
   (`gh run list`, 2026-11-11).
 - Since 2026-10-21 agents ran `gh run rerun` about 218 times (transcripts).
 
-## 8. Flaky by design (decisions for Alexis)
+## 8. Suspected flaky by design
 
 These checks fail for reasons outside the code under test. Each needs a
 decision: keep it in the PR gate, move it out (nightly or local), or replace it.
 
 | Check | Evidence | Recommendation |
 |---|---|---|
-| echopoint `storybook-test` (Vitest browser mode, 1,481 stories) | Failed in 15 of the last 53 failed echopoint runs. The benchmark shows why: 0 of 10 failures when its job runs alone on a host, 5 of 10 when two heavy jobs share 1340p. Storybook's docs name the same cause: errors "in CI environments when running a large number of tests simultaneously". Failed 3 of 3 atelier runs that shared the engine. | Contention, not design. With one heavy job per host it can stay in the gate. The `ci/refactor` branch moves it to a non-required job; revert that if you keep it blocking. |
+| echopoint `storybook-test` (Vitest browser mode, 1,481 stories) | Failed in 15 of the last 53 failed echopoint runs. The benchmark shows why: 0 of 10 failures when its job runs alone on a host, 5 of 10 when two heavy jobs share 1340p. Storybook's docs name the same cause: errors "in CI environments when running a large number of tests simultaneously". Failed 3 of 3 atelier runs that shared the engine. | Contention, not design. Decided 2026-11-11: stays in the required gate; one heavy job per host keeps it green. |
 | echopoint `browser-app` (full stack in Docker-in-Docker: backend build, Anchor, Postgres, Redis, Mailpit, WireMock, cloud worker, real Clerk) | Failed in 27 of 53 failed runs: 11 from `anchor:latest` (fixed by the pin), at least 3 webServer boot timeouts (15 min, cloud worker health), 1 GitHub 504, and real test failures. | Keep, now hermetic. Revisit after two weeks of data with the pin. If boot timeouts remain, move it to post-merge on `main`. |
-| echopoint `motion` (viewport animation checks on 3 viewports) | Failed in 6 of 53; 0 of 15 in the benchmark (alone or paired). | Same decision as Storybook. |
+| echopoint `motion` (viewport animation checks on 3 viewports) | Failed in 6 of 53; 0 of 15 in the benchmark (alone or paired). | Stays in the required gate (same decision as Storybook). |
 | Post-deploy gate flows against shared dev | See principle 2. | Keep as a deploy gate; never as a PR gate. |
 | `tailscale/github-action` in CI | Can log the host itself out of the tailnet (infra github-runners.md). | Keep only in infra deploy jobs. |
 
