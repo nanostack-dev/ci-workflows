@@ -116,8 +116,8 @@ internet, so it is the only place a deploy token lives.
 
 | Host | Role | Labels | Holds secrets |
 |---|---|---|---|
-| 1340p | Builds and tests | `nanostack-light` (seconds-long jobs), `nanostack-build` (one heavy job) | No. No 1Password token, no deploy key |
-| M2 devbox, job VM | Builds and tests: one throwaway Lima VM per job, pf fence (no tailnet, no LAN) | `nanostack-build` | No |
+| 1340p | Builds and tests | `nanostack-light` (seconds-long jobs), `nanostack-dev` (builds), `nanostack-dagger-pool` on r1 only (one heavy job) | No. No 1Password token, no deploy key |
+| M2 devbox, job VM | Builds and tests: one throwaway Lima VM per job, pf fence (no tailnet, no LAN) | `nanostack-dagger-pool` | No |
 | M2 devbox, deploy runner | Every deploy, dev and prod, previews, infra operations, prod backups. Never runs pull request code | `nanostack-deploy` | Yes: the 1Password token, in a root-owned file on the Mac, not in GitHub secrets |
 | 8845hs | Prod host only. No GitHub runner: it is internet-facing | none | Its own service secrets |
 | GitHub-hosted | Public repositories | `ubuntu-latest` | No |
@@ -125,8 +125,9 @@ internet, so it is the only place a deploy token lives.
 Rules:
 - A job that reads a secret runs on `nanostack-deploy`.
   Nothing else. ci-lint enforces it (planned rule `secret-runner`).
-- `nanostack-build` takes at most one heavy job per host: one 1340p slot and
-  the Mac's job VM.
+- `nanostack-dagger-pool` takes at most one heavy job per host: 1340p-r1 and
+  the Mac's job VM. The lighter Dagger checks (marketing, HomeScanner, design
+  system) stay on `nanostack-dev`.
 - Removed: GARM and Incus (`nanostack-ci`), the `nanostack-dagger` label, and
   every 1Password read on 1340p.
 - No GitHub runner on an internet-facing host (1340p, 8845hs). Prod is deployed from the Mac over the tailnet, through the restricted `deploy@8845hs` entry point of infra ADR 0008 (forced command, `from=` the Mac's tailnet address).
