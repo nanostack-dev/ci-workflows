@@ -129,6 +129,14 @@ average. The 2026-11-11 pass (numbers in [Job durations](#job-durations)):
   the slot's `HOME` (not the workspace, which checkout cleans): clippy, tests
   and the release build went from 209 s to under 15 s. A slot's first run is
   still cold: 162–217 s of Rust (measured on 3 slots).
+- **One cache per build that differs.** A matrix whose legs share one cache key
+  keeps whichever leg saved first. nanostack-framework's 16 DB jobs shared
+  setup-go's `go.sum` key, so a SQLite job's cache served the postgres race
+  builds, which compiled from scratch. A key per package and race flag cut the
+  longest job from 194–217 s to 123 s.
+- **Fresh statistics before query-heavy tests.** A table filled just before the
+  test has no planner statistics. MariaDB planned the keyset contract's
+  correlated subqueries badly until `ANALYZE TABLE`: 46 s → 11 s.
 - **Independent suites run in parallel.** Browser suites that each seed their
   own fixture and start their own server do not need to wait for each other
   (HomeScanner: one server per route viewport, 182 s → 46 s).
@@ -137,9 +145,12 @@ average. The 2026-11-11 pass (numbers in [Job durations](#job-durations)):
   min, but both made `templates.e2e.ts` time out on an 8 s action (1 run in 8,
   1 in 5), which never happened at 2 workers. Five clean runs proved nothing:
   the flake showed up in runs 6 to 8. anchor stays at 2 workers.
-- **Self-hosted heavy jobs are CPU-bound.** echopoint's checks share one host
-  (principle 4), so reordering them only moves the tail. `dagger check` starts
-  checks in a fixed order, whatever order the command line gives.
+- **Self-hosted heavy jobs are CPU-bound: spread them over hosts.** On one
+  host, reordering echopoint's checks only moved the tail (`dagger check`
+  starts checks in a fixed order) and 8 checks at once was no faster than 4.
+  Two parts on the two heavy hosts cut the run from 272–277 s to 169–171 s.
+  Balance the parts by measured time: a first split ran 188–199 s because one
+  part took 30 % longer than the other.
 
 ## Runner layout
 
@@ -206,23 +217,20 @@ of the `ci/refactor` branches.
 | anchor `go.yml`, whole run | 763 s (one `dagger-backend` job) | 265–319 s | backend checks on 9 parallel hosted runners, component tests in 3 parts |
 | anchor `e2e-app` | 264–385 s (median 288, 7 runs) | unchanged | 2 Playwright workers stay. 3 or 4 workers saved about 30 s but added an 8 s timeout flake in `templates.e2e.ts` (see principle 8) |
 | HomeScanner `React and Rust checks` | 352 s | 75–84 s on a warm slot (11 runs on 4 slots passed; 1 more failed uploading its screenshots: GitHub's artifact service answered HTML) | Cargo target directory kept in the slot (Rust 209 s → under 15 s); 5 browser suites in parallel, one per route viewport (182 s → 46 s) |
-| nanostack-framework `DB` | 364 s | 242 s wall (longest job 194 s, a postgres race suite; MariaDB's statement-cache job 225–303 s → 105 s) | race and statement-cache suites in parallel jobs; the postgres suite's two drivers in parallel jobs; CockroachDB no longer tested (ADR 0015); `ANALYZE TABLE` before the keyset contract's computed-key walks (MariaDB planned them badly on fresh tables: 46 s → 11 s per pass) |
-| echopoint `dagger-check` (PR) | 288 s median, 467 s p90 | unchanged | browser-app takes 134 s alone and 309 s next to the other checks on one host |
+| nanostack-framework `DB` | 364 s | 123 s wall on a warm cache (longest job 123 s) | race and statement-cache suites in parallel jobs; the postgres suite's two drivers in parallel jobs; CockroachDB no longer tested (ADR 0015); one Go build cache per package and race flag (setup-go's single go.sum key let a SQLite job's cache win, so the postgres race builds compiled from scratch: test step 189 s → 95 s); `ANALYZE TABLE` before the keyset contract's computed-key walks (MariaDB planned them badly on fresh tables: 46 s → 11 s per pass); the read-only keyset walks as parallel subtests (postgres walk test under `-race` 46 s → 14 s) |
+| echopoint `dagger-check`, every check with the cache busted | 272–277 s on one host (3 runs) | 169–171 s (2 runs) | two parts, one per heavy host: `frontend and go` (frontend, Storybook, motion, ESLint, `go-test`, `go-lint`) and `rest` (`--skip` of that list, `browser-app` included). The parts take 163 s and 157 s |
 
 What is left, and why it stays:
 
 - anchor: each runner pays about 130 s of cold engine start and compile. A
   warm cache needs a self-hosted runner, which a public repository should
   not use for pull requests from forks.
-- echopoint: the checks are CPU-bound on one host. `DAGGER_CHECK_PARALLEL` 8
-  against 4, same host, cache busted: 267 s against 273 s on 1340p-r1, 251 s
-  against 243 s on the devbox, so the limit stays 4. Giving one pull request
-  both heavy slots (1340p-r1 and the devbox) would roughly halve its time and
-  halve how many pull requests run at once.
-- nanostack-framework: the postgres race suites (130–194 s across runners
-  for the same work) spend most of their test time under the race detector:
-  the two keyset walk tests take 63 s with `-race` and 13 s without. Running
-  the read-only walks as parallel subtests would save about 25 s, but needs a
-  lock in the upstream go-jet test loggers. Not worth the divergence.
+- echopoint: `browser-app` alone takes about 134 s, so a part holding it
+  cannot go much under 160 s. Two pull requests at once now share both hosts
+  part by part: the first finishes in about 170 s and the second in about 340
+  s, against 272 s each before (about the same on average).
+- nanostack-framework: the first run after a `go.sum` or Go toolchain change
+  compiles every suite from scratch (postgres jobs about 280 s). Later
+  commits restore the newest cache of their package and race flag.
 - anchor `component-tests`: test names come from the sources, every third
   test per part; a part that ran fewer tests than it selected fails.
