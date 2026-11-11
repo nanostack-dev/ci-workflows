@@ -109,6 +109,31 @@ decision: keep it in the PR gate, move it out (nightly or local), or replace it.
 | Post-deploy gate flows against shared dev | See principle 2. | Keep as a deploy gate; never as a PR gate. |
 | `tailscale/github-action` in CI | Can log the host itself out of the tailnet (infra github-runners.md). | Keep only in infra deploy jobs. |
 
+## 9. Spend wall time only on the critical path
+
+Measure a job before you change it, then shorten the longest path, not the
+average. The 2026-11-11 pass (numbers in [Job durations](#job-durations)):
+
+- **Cold runners: spread the work.** A GitHub-hosted runner starts cold, so
+  each check pays engine start and a cold compile, about 130 s. On one 4 vCPU
+  runner, checks that run together slow each other down: anchor's
+  component-tests took 4m35s alone and 10m41s next to the other backend
+  checks. Public repositories get hosted runners for free, so give each heavy
+  check its own runner (a matrix job), and split a suite that is still the
+  longest into parts (anchor `component-tests-a`/`-b`/`-c`, each fails unless
+  every test it selected ran).
+- **Warm runners: keep state between runs.** A persistent self-hosted slot
+  keeps what a cold one rebuilds. HomeScanner keeps Cargo's target directory in
+  the slot's `HOME` (not the workspace, which checkout cleans): clippy, tests
+  and the release build went from 209 s to under 15 s.
+- **Independent suites run in parallel.** Browser suites that each seed their
+  own fixture and start their own server do not need to wait for each other
+  (HomeScanner: one server per route viewport, 182 s → 46 s).
+- **Use the cores you have.** Playwright on a 4 vCPU runner: 4 workers, not 2.
+- **Self-hosted heavy jobs are CPU-bound.** echopoint's checks share one host
+  (principle 4), so reordering them only moves the tail. `dagger check` starts
+  checks in a fixed order, whatever order the command line gives.
+
 ## Runner layout
 
 Decided with Alexis on 2026-11-11. 1340p serves dev websites to the internet,
@@ -162,3 +187,30 @@ runs excluded): browser-app 27 (11 of them `anchor:latest`), go-test 15,
 storybook-test 15, api-client/stale 7, motion 6, go-lint 4. No
 `ERR_NETWORK_CHANGED` and no dynamic-import failure inside Dagger; 3 runs were
 OOM-killed (exit 137).
+
+### Job durations
+
+The longest jobs before and after the 2026-11-11 pass. Before: median of the
+successful runs of the previous week (`gh api .../actions/runs`). After: runs
+of the `ci/refactor` branches.
+
+| Repository: job | Before | After | Change |
+|---|---|---|---|
+| anchor `go.yml`, whole run | 763 s (one `dagger-backend` job) | 265–319 s | backend checks on 9 parallel hosted runners, component tests in 3 parts |
+| anchor `e2e-app` | 330 s | 210 s | 4 Playwright workers instead of 2 (70 tests: 3.4 min → 2.3 min) |
+| HomeScanner `React and Rust checks` | 352 s | 84 s on a warm slot | Cargo target directory kept in the slot (Rust 209 s → under 15 s); 5 browser suites in parallel, one per route viewport (182 s → 46 s) |
+| nanostack-framework `DB` | 364 s | 314 s | race and statement-cache suites in parallel jobs; CockroachDB (2 jobs, 270–340 s) is now the longest |
+| echopoint `dagger-check` (PR) | 288 s median, 467 s p90 | unchanged | browser-app takes 134 s alone and 309 s next to the other checks on one host |
+
+What is left, and why it stays:
+
+- anchor: each runner pays about 130 s of cold engine start and compile. A
+  warm cache needs a self-hosted runner, which a public repository should
+  not use for pull requests from forks.
+- echopoint: the checks are CPU-bound on one host. Giving one pull request
+  both heavy slots (1340p-r1 and the devbox) would roughly halve its time and
+  halve how many pull requests run at once.
+- nanostack-framework: framework ADR 0015 drops CockroachDB; its two jobs are
+  the longest.
+- anchor `component-tests`: test names come from the sources, every third
+  test per part; a part that ran fewer tests than it selected fails.

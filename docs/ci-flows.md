@@ -54,8 +54,8 @@ pull_request touching .github/**
 
 | File | Trigger | Flow | Must keep |
 |---|---|---|---|
-| `go.yml` | PR, push main | `detect_changes` → dagger frontend ∥ dagger backend ∥ publish ∥ migration-lint → `ci-ok`; push main → dispatch deploy | Hosted runners (public repo): Dagger is cold every run, ≈ 11 min |
-| `e2e-app.yml` | PR | isolated browser app suite | Reads git history, so it stays a workflow job |
+| `go.yml` | PR, push main | `detect_changes` → dagger frontend ∥ dagger backend (matrix: component-tests a/b/c, service-tests, unit-and-wiring-tests, lint, generated-code, image-builds) ∥ publish ∥ migration-lint → `ci-ok`; push main → dispatch deploy | Hosted runners (public repo), cold every run: one runner per heavy check keeps the run near 4.5 min |
+| `e2e-app.yml` | PR | isolated browser app suite, 4 Playwright workers | Reads git history, so it stays a workflow job |
 | `release-client.yml` | push main (clients/go) | compute next `clients/go/vX.Y.Z` from commits → tag | |
 | `preview.yml` | PR edited/closed (base main) | → ci-workflows `preview.yml` (service anchor, `ubuntu-latest`) | |
 | `workflow-lint.yml` | PR touching .github | → ci-workflows `workflow-lint.yml` | |
