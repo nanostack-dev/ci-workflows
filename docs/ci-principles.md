@@ -129,8 +129,9 @@ average. The 2026-11-11 pass (numbers in [Job durations](#job-durations)):
 - **Independent suites run in parallel.** Browser suites that each seed their
   own fixture and start their own server do not need to wait for each other
   (HomeScanner: one server per route viewport, 182 s → 46 s).
-- **Use the cores you have.** Playwright on a 4 vCPU runner: 4 workers, not 2
-  (median 3.4 → 2.7 min).
+- **Use the cores you have, not more.** Playwright on a 4 vCPU runner: 3
+  workers (median 3.4 → 2.8 min). 4 workers were barely faster and failed a
+  run in 5 on timeouts: speed that adds a flake is a loss (principle 7).
 - **Self-hosted heavy jobs are CPU-bound.** echopoint's checks share one host
   (principle 4), so reordering them only moves the tail. `dagger check` starts
   checks in a fixed order, whatever order the command line gives.
@@ -198,8 +199,8 @@ of the `ci/refactor` branches.
 | Repository: job | Before | After | Change |
 |---|---|---|---|
 | anchor `go.yml`, whole run | 763 s (one `dagger-backend` job) | 265–319 s | backend checks on 9 parallel hosted runners, component tests in 3 parts |
-| anchor `e2e-app` | 330 s | 210–276 s | 4 Playwright workers instead of 2: the 70 tests take 2.3–3.1 min (median 2.7, 3 runs) against 3.0–3.5 min (median 3.4, 6 runs) |
-| HomeScanner `React and Rust checks` | 352 s | 84 s on a warm slot | Cargo target directory kept in the slot (Rust 209 s → under 15 s); 5 browser suites in parallel, one per route viewport (182 s → 46 s) |
+| anchor `e2e-app` | 330 s | about 290 s | 3 Playwright workers instead of 2: the 70 tests take 2.4–3.3 min (median 2.8, 5 runs, no failure) against 3.0–3.5 min (median 3.4, 6 runs). 4 workers: median 2.7 min but 1 failed run in 5 (8 s timeouts) |
+| HomeScanner `React and Rust checks` | 352 s | 77–84 s on a warm slot (6 runs, 3 slots, no failure) | Cargo target directory kept in the slot (Rust 209 s → under 15 s); 5 browser suites in parallel, one per route viewport (182 s → 46 s) |
 | nanostack-framework `DB` | 364 s | 231–301 s (set by MariaDB's statement-cache job; every other job ≤ 196 s) | race and statement-cache suites in parallel jobs; the postgres suite's two drivers in parallel jobs; CockroachDB no longer tested (ADR 0015) |
 | echopoint `dagger-check` (PR) | 288 s median, 467 s p90 | unchanged | browser-app takes 134 s alone and 309 s next to the other checks on one host |
 
