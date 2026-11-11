@@ -37,7 +37,8 @@ jobs:
         run: |
           printf 'self-hosted-runner:\n  labels: [nanostack-light, nanostack-dev, nanostack-dagger-pool, nanostack-prod]\n' > "$RUNNER_TEMP/actionlint.yaml"
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -config-file "$RUNNER_TEMP/actionlint.yaml" \
-            -ignore 'property "workflow_(repository|sha)" is not defined'
+            -ignore 'property "workflow_(repository|sha)" is not defined' \
+            -ignore 'unexpected key "queue" for "concurrency" section'
 
   unit:
     name: Fixtures and unit tests

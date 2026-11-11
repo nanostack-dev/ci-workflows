@@ -14,7 +14,9 @@ name: Workflow lint
 #       with: { private: true }
 #
 # Both tools come from the Go module proxy, verified by the checksum database:
-# no binary download from github.com.
+# no binary download from github.com. The two -ignore patterns are GitHub
+# features newer than actionlint 1.7.12: job.workflow_sha/workflow_repository
+# and concurrency.queue (changelog 2026-05-07).
 
 on:
   workflow_call:
@@ -63,7 +65,8 @@ jobs:
           labels="nanostack-light, nanostack-dev, nanostack-dagger-pool, nanostack-prod${EXTRA:+, $EXTRA}"
           printf 'self-hosted-runner:\n  labels: [%s]\n' "$labels" > "$RUNNER_TEMP/actionlint.yaml"
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -config-file "$RUNNER_TEMP/actionlint.yaml" \
-            -ignore 'property "workflow_(repository|sha)" is not defined'
+            -ignore 'property "workflow_(repository|sha)" is not defined' \
+            -ignore 'unexpected key "queue" for "concurrency" section'
       - name: ci-lint
         env:
           PRIVATE: ${{ inputs.private }}
