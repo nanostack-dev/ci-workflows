@@ -152,7 +152,9 @@ average. The 2026-11-11 pass (numbers in [Job durations](#job-durations)):
   common case. anchor's component parts took 23–34 s on a rerun and 77–115 s
   after a change to a package 53 others import: 31–50 s compiling the test
   binary on 4 vCPU and 31–73 s running the tests. Eight parts instead of
-  five brought them to 54–89 s.
+  five brought them to 54–89 s. `TestClerkReconcileSkipsADisabledInstance`
+  waited a fixed 12 s alone before the parallel tests; it now ends when the
+  queue settles (about 2 s).
 - **Warm runners: keep state between runs.** A persistent self-hosted slot
   keeps what a cold one rebuilds. HomeScanner keeps Cargo's target directory in
   the slot's `HOME` (not the workspace, which checkout cleans): clippy, tests
@@ -253,11 +255,16 @@ What is left, and why it stays:
 
 - anchor: a run after a `go.sum` change compiles every leg from scratch
   (about 200 s). Later commits restore the newest cache of their leg.
-- anchor, after a Go change: a 4 vCPU runner compiles the component test
-  binary in 31–50 s and lint re-analyses the dependents in about 80 s, so
-  those jobs stay over a minute. Only bigger runners shorten that.
-  `TestClerkReconcileSkipsADisabledInstance` runs alone (not parallel) and
-  waits 12 s to see that no job runs: the floor of its part.
+- anchor, after a Go change: the component parts are the critical path,
+  about 25 s of setup, 33-51 s compiling and 20-38 s of tests (measured
+  2026-11-12 with `main`'s caches and a change to `internal/repository`).
+  The compile is real work: each part rebuilds the 26 packages that import
+  the changed one, then links the test binary. Splitting does not cut it:
+  every part compiles the same packages, and 16 parts instead of 8 would
+  save about 10 s of tests. Lint in three shards took 33/50/67 s against
+  83 s for one lint, but stays shorter than the component parts, so it
+  would not shorten the run. Only a faster CPU shortens this path.
+  With no Go change every job replays its results: component parts 31-36 s.
 - echopoint: `browser-app` alone takes about 134 s, so a part holding it
   cannot go much under 160 s. Two pull requests at once now share both hosts
   part by part: the first finishes in about 170 s and the second in about 340
