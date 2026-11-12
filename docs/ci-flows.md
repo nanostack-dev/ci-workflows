@@ -41,7 +41,7 @@ pull_request touching .github/**
 
 | File | Trigger | Flow | Must keep |
 |---|---|---|---|
-| `go.yml` | PR (no paths), push main (paths), dispatch | `detect_changes` → `dagger-check` (every check, on `nanostack-dagger-pool`) ∥ `dagger-publish` ∥ `migrations-verify` ∥ `migration-lint` → `ci-ok`; push main: → `dispatch-deploy-dev` or `dispatch-frontend-deploy-dev`; PR: `preview-flag` → `dispatch-preview-upsert` | `queue: max` on main pushes (deploys in merge order); `ci-ok` required; deploys gate on `dagger-check` |
+| `go.yml` | PR (no paths), push main (paths), dispatch | `detect_changes` → `dagger-check` (every check, in two parts: `frontend and go` and `rest`, one per host of `nanostack-dagger-pool`) ∥ `dagger-publish` ∥ `migrations-verify` ∥ `migration-lint` → `ci-ok`; push main: → `dispatch-deploy-dev` or `dispatch-frontend-deploy-dev`; PR: `preview-flag` → `dispatch-preview-upsert` | `queue: max` on main pushes (deploys in merge order); `ci-ok` required; deploys gate on `dagger-check` |
 | `preview.yml` | PR edited/closed | → ci-workflows `preview.yml` (service echopoint) | Stacked PRs may own previews |
 | `anchor-pin.yml` | daily, dispatch | resolve `anchor:latest` digest → if new: commit to `chore/anchor-pin` → PR → `go.yml` dispatch on the branch | Needs "Allow GitHub Actions to create pull requests" for the PR step |
 | `frontend-full.yml` | nightly, dispatch | full `storybook-test` + `motion` (every story) | Not a gate; its failures are the Storybook backlog |
@@ -54,8 +54,8 @@ pull_request touching .github/**
 
 | File | Trigger | Flow | Must keep |
 |---|---|---|---|
-| `go.yml` | PR, push main | `detect_changes` → dagger frontend ∥ dagger backend ∥ publish ∥ migration-lint → `ci-ok`; push main → dispatch deploy | Hosted runners (public repo): Dagger is cold every run, ≈ 11 min |
-| `e2e-app.yml` | PR | isolated browser app suite | Reads git history, so it stays a workflow job |
+| `go.yml` | PR, push main | `detect_changes` → `frontend` (matrix: lint/types/API client, unit tests and build, Storybook 1/4..4/4) ∥ `backend` (matrix: lint, component-tests a–h, service-tests, unit-and-wiring-tests, generated-code, image-builds) ∥ `publish` (native `go build`, then the image packages the binary) ∥ migration-lint → `ci-ok`; push main → dispatch deploy | Hosted runners (public repo). Lint and Go tests run natively with Go's build, test and lint caches restored per matrix leg; checkout files are dated by content so test results replay. `image-builds` builds the Dockerfile from source only for fork PRs and when a file only that build reads changes (Dockerfile, `.dockerignore`, `scripts/build-anchor.sh`, go.mod/go.sum). |
+| `e2e-app.yml` | PR | isolated browser app suite in 2 shards (2 Playwright workers each) → `app` checks the shards' proofs together (every scenario ran exactly once, setup projects once per shard) | Reads git history, so it stays a workflow job; `app` is the required check |
 | `release-client.yml` | push main (clients/go) | compute next `clients/go/vX.Y.Z` from commits → tag | |
 | `preview.yml` | PR edited/closed (base main) | → ci-workflows `preview.yml` (service anchor, `ubuntu-latest`) | |
 | `workflow-lint.yml` | PR touching .github | → ci-workflows `workflow-lint.yml` | |
