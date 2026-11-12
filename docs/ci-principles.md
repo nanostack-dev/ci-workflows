@@ -122,8 +122,37 @@ average. The 2026-11-11 pass (numbers in [Job durations](#job-durations)):
   component-tests took 4m35s alone and 10m41s next to the other backend
   checks. Public repositories get hosted runners for free, so give each heavy
   check its own runner (a matrix job), and split a suite that is still the
-  longest into parts (anchor `component-tests-a`/`-b`/`-c`, each fails unless
+  longest into parts (anchor `component-tests-a` to `-h`, each fails unless
   every test it selected ran).
+- **Hosted runners: restore the caches a laptop keeps.** In Dagger every
+  hosted anchor run compiled from scratch: lint 225–282 s, each Go test group
+  205–268 s. Run natively instead (`scripts/lint.sh`, `scripts/go-test-part.sh`,
+  the same scripts the Dagger checks call) and restore Go's build cache, test
+  cache and golangci-lint's cache per matrix leg. Two traps: Go replays a test
+  result only when the files and directories the test opened have the same
+  size and mtime, and a checkout gives every file a new mtime. So
+  `scripts/date-by-content.py` dates each file by its blob hash and each
+  directory by its tree hash, in the past (Go ignores inputs that look too
+  new). And `CGO_ENABLED` is part of the cache keys: set it the same way in
+  every run. Result, when no Go file changed: the lint job 34–41 s, each
+  test job 23–34 s (see the next two principles for a Go change).
+- **Image builds: build the binary where the caches are, package it in the
+  image.** Inside Buildx a Go build cache must be copied into the builder
+  first (`buildkit-cache-dance`: 27 s for 207 MB on every run) and the
+  modules download again whenever the layer cache misses (12 s). anchor's
+  `publish` now runs `scripts/build-anchor.sh` natively with Go's caches
+  restored, and passes the binary to the Dockerfile with `--build-context
+  binary=<dir>`, which replaces its `binary` stage: the builder stage does not
+  run. publish: 94–125 s → 56 s (no Go change), 87 s (Go change, of which 33 s
+  compile). The Dockerfile still builds from source for laptops, Dagger and
+  fork PRs, with the same script and a check that its Go version equals
+  go.mod's toolchain.
+- **Time a change that touches code, not only a rerun.** A rerun of the same
+  commit replays every test and every layer, so it shows the floor, not the
+  common case. anchor's component parts took 23–34 s on a rerun and 77–115 s
+  after a change to a package 53 others import: 31–50 s compiling the test
+  binary on 4 vCPU and 31–73 s running the tests. Eight parts instead of
+  five brought them to 54–89 s.
 - **Warm runners: keep state between runs.** A persistent self-hosted slot
   keeps what a cold one rebuilds. HomeScanner keeps Cargo's target directory in
   the slot's `HOME` (not the workspace, which checkout cleans): clippy, tests
@@ -214,17 +243,21 @@ of the `ci/refactor` branches.
 
 | Repository: job | Before | After | Change |
 |---|---|---|---|
-| anchor `go.yml`, whole run | 763 s (one `dagger-backend` job) | 265–319 s | backend checks on 9 parallel hosted runners, component tests in 3 parts |
-| anchor `e2e-app` | 264–385 s (median 288, 7 runs) | unchanged | 2 Playwright workers stay. 3 or 4 workers saved about 30 s but added an 8 s timeout flake in `templates.e2e.ts` (see principle 8) |
+| anchor `go.yml`, whole run | 763 s (one `dagger-backend` job) | 89–117 s with no Go change; about 2 min after a change to a widely imported Go package | backend and frontend checks on parallel hosted runners; lint and Go tests native with restored caches (23–41 s per job when results replay); component tests in 8 parts; Storybook in 4 shards with a cached browser (45–69 s); publish builds the binary natively (56 s, 87 s after a Go change) |
+| anchor `e2e-app` | 264–385 s (median 288, 7 runs) | 203–248 s | 2 shards of 2 Playwright workers. 3 or 4 workers on one runner saved about 30 s but added an 8 s timeout flake in `templates.e2e.ts` (see principle 8) |
 | HomeScanner `React and Rust checks` | 352 s | 75–84 s on a warm slot (11 runs on 4 slots passed; 1 more failed uploading its screenshots: GitHub's artifact service answered HTML) | Cargo target directory kept in the slot (Rust 209 s → under 15 s); 5 browser suites in parallel, one per route viewport (182 s → 46 s) |
 | nanostack-framework `DB` | 364 s | 123 s wall on a warm cache (longest job 123 s) | race and statement-cache suites in parallel jobs; the postgres suite's two drivers in parallel jobs; CockroachDB no longer tested (ADR 0015); one Go build cache per package and race flag (setup-go's single go.sum key let a SQLite job's cache win, so the postgres race builds compiled from scratch: test step 189 s → 95 s); `ANALYZE TABLE` before the keyset contract's computed-key walks (MariaDB planned them badly on fresh tables: 46 s → 11 s per pass); the read-only keyset walks as parallel subtests (postgres walk test under `-race` 46 s → 14 s) |
 | echopoint `dagger-check`, every check with the cache busted | 272–277 s on one host (3 runs) | 169–171 s (2 runs) | two parts, one per heavy host: `frontend and go` (frontend, Storybook, motion, ESLint, `go-test`, `go-lint`) and `rest` (`--skip` of that list, `browser-app` included). The parts take 163 s and 157 s |
 
 What is left, and why it stays:
 
-- anchor: each runner pays about 130 s of cold engine start and compile. A
-  warm cache needs a self-hosted runner, which a public repository should
-  not use for pull requests from forks.
+- anchor: a run after a `go.sum` change compiles every leg from scratch
+  (about 200 s). Later commits restore the newest cache of their leg.
+- anchor, after a Go change: a 4 vCPU runner compiles the component test
+  binary in 31–50 s and lint re-analyses the dependents in about 80 s, so
+  those jobs stay over a minute. Only bigger runners shorten that.
+  `TestClerkReconcileSkipsADisabledInstance` runs alone (not parallel) and
+  waits 12 s to see that no job runs: the floor of its part.
 - echopoint: `browser-app` alone takes about 134 s, so a part holding it
   cannot go much under 160 s. Two pull requests at once now share both hosts
   part by part: the first finishes in about 170 s and the second in about 340
@@ -232,5 +265,5 @@ What is left, and why it stays:
 - nanostack-framework: the first run after a `go.sum` or Go toolchain change
   compiles every suite from scratch (postgres jobs about 280 s). Later
   commits restore the newest cache of their package and race flag.
-- anchor `component-tests`: test names come from the sources, every third
+- anchor `component-tests`: test names come from the sources, every eighth
   test per part; a part that ran fewer tests than it selected fails.
