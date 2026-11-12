@@ -176,6 +176,11 @@ average. The 2026-11-11 pass (numbers in [Job durations](#job-durations)):
   min, but both made `templates.e2e.ts` time out on an 8 s action (1 run in 8,
   1 in 5), which never happened at 2 workers. Five clean runs proved nothing:
   the flake showed up in runs 6 to 8. anchor stays at 2 workers.
+- **Prefer the arm runners for compile-heavy hosted jobs.** For public
+  repositories `ubuntu-24.04-arm` is free and compiled Go 10-30 % faster
+  than `ubuntu-latest` (anchor, 2026-11-12), with less spread between runs.
+  Keep the architecture in cache keys, and keep jobs that build an amd64
+  image on x64.
 - **Self-hosted heavy jobs are CPU-bound: spread them over hosts.** On one
   host, reordering echopoint's checks only moved the tail (`dagger check`
   starts checks in a fixed order) and 8 checks at once was no faster than 4.
@@ -263,7 +268,10 @@ What is left, and why it stays:
   every part compiles the same packages, and 16 parts instead of 8 would
   save about 10 s of tests. Lint in three shards took 33/50/67 s against
   83 s for one lint, but stays shorter than the component parts, so it
-  would not shorten the run. Only a faster CPU shortens this path.
+  would not shorten the run. The free arm runners (`ubuntu-24.04-arm`)
+  compile faster: component parts 86-104 s, lint 55 s, the run 114 s
+  against 131 s on x64, so anchor's backend jobs run there since
+  2026-11-12 (the image build stays on x64).
   With no Go change every job replays its results: component parts 31-36 s.
 - echopoint: `browser-app` alone takes about 134 s, so a part holding it
   cannot go much under 160 s. Two pull requests at once now share both hosts
