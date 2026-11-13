@@ -11,7 +11,7 @@ inputs:
       Dagger release. Leave the default: every repository moves together, and
       the checksums below are for this version only.
     required: false
-    default: v1.0.0-beta.24
+    default: v1.0.0-beta.27
   engine:
     description: >-
       DAGGER_ENGINE for the job. Empty uses the engine image of the same
@@ -38,9 +38,9 @@ runs:
         # Checksums from https://dl.dagger.io/dagger/releases/<version>/checksums.txt.
         # Bump them with the version default above, in the same change.
         case "${VERSION}/$(uname -s)/$(uname -m)" in
-          v1.0.0-beta.24/Linux/x86_64) platform=linux_amd64 sum=648a5ffcf7d6d724526d20942066fd023cdf2b8284204d0ca3e1fcf6f0793f6e ;;
-          v1.0.0-beta.24/Linux/aarch64) platform=linux_arm64 sum=c6fd1d9fa53ac4880a21373411a923720cd65e6b7a05a617379278a524ee078d ;;
-          v1.0.0-beta.24/Darwin/arm64) platform=darwin_arm64 sum=f0b5bfe032f8d245633ee03c350fcc4ad7089bf46a1f86db0a8dddf3011ca5fc ;;
+          v1.0.0-beta.27/Linux/x86_64) platform=linux_amd64 sum=de2a3ca569c3a955d5ce98d2c4879b67a4459c394a7e1684261ba7152bdb6865 ;;
+          v1.0.0-beta.27/Linux/aarch64) platform=linux_arm64 sum=1ef003a4522d4f39c862d6dd360bc2916a605f87aad3dce4988c01f4bcd73358 ;;
+          v1.0.0-beta.27/Darwin/arm64) platform=darwin_arm64 sum=5efd7f5cec39093dd10d4035aae8ee87f82403606c0a6d958d74a0edee04171a ;;
           *) echo "::error::No pinned Dagger checksum for ${VERSION} on $(uname -s)/$(uname -m)"; exit 1 ;;
         esac
         if ! "$BIN/dagger" version 2>/dev/null | grep -q "$VERSION"; then
