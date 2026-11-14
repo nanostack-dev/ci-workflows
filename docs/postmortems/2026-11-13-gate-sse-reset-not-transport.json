@@ -211,7 +211,11 @@
       "fixes": [
         "R2",
         "R1"
-      ]
+      ],
+      "ticket": {
+        "label": "ci-workflows#51",
+        "url": "https://github.com/nanostack-dev/ci-workflows/pull/51"
+      }
     },
     {
       "id": "A2",
@@ -233,7 +237,11 @@
       "status": "done",
       "fixes": [
         "R1"
-      ]
+      ],
+      "ticket": {
+        "label": "skills#62",
+        "url": "https://github.com/nanostack-dev/skills/pull/62"
+      }
     },
     {
       "id": "A4",
@@ -284,6 +292,14 @@
     {
       "label": "ci-workflows#42",
       "url": "https://github.com/nanostack-dev/ci-workflows/pull/42"
+    },
+    {
+      "label": "ci-workflows#51",
+      "url": "https://github.com/nanostack-dev/ci-workflows/pull/51"
+    },
+    {
+      "label": "skills#62",
+      "url": "https://github.com/nanostack-dev/skills/pull/62"
     }
   ]
 }

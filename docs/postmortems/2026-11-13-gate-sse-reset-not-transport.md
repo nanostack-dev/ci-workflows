@@ -139,9 +139,9 @@ flowchart TD
 
 | ID | Action | Type | Owner | Due | Status | Ticket | Fixes |
 |---|---|---|---|---|---|---|---|
-| A1 | Add the SSE reset class to the gate regex and a sample self-test that fails the step when the regex stops matching a known transport message | prevent | Nanostack routine (echopoint-investigation) | 2026-11-14 | done |  | R2, R1 |
+| A1 | Add the SSE reset class to the gate regex and a sample self-test that fails the step when the regex stops matching a known transport message | prevent | Nanostack routine (echopoint-investigation) | 2026-11-14 | done | [ci-workflows#51](https://github.com/nanostack-dev/ci-workflows/pull/51) | R2, R1 |
 | A2 | run_suites.sh preflight fetches the gate workflow and checks each of its own transport samples against the gate regex; prints GATE-TRANSPORT-DRIFT | detect | Nanostack routine (echopoint-investigation) | 2026-11-14 | done |  | R1 |
-| A3 | flow-suite-testing skill: a transport class added to one classifier is added to the gate and its samples the same run | process | Nanostack routine (echopoint-investigation) | 2026-11-14 | done |  | R1 |
+| A3 | flow-suite-testing skill: a transport class added to one classifier is added to the gate and its samples the same run | process | Nanostack routine (echopoint-investigation) | 2026-11-14 | done | [skills#62](https://github.com/nanostack-dev/skills/pull/62) | R1 |
 | A4 | Find why the 1340p path to 172.64.80.1 resets connections (carried over from 2026-11-05 A5) | prevent | infra maintainers | 2026-11-27 | open |  | R3 |
 | A5 | Decide who reruns a gate that is red only on transport errors after its rerun: an automatic suite retry, or a rule that lets the routine rerun it | mitigate | infra maintainers | 2026-11-27 | open |  | R4 |
 
@@ -165,3 +165,5 @@ None: dev and CI only.
 - [Deploy Router run 43512401138](https://github.com/nanostack-dev/infra/actions/runs/43512401138)
 - [First postmortem (2026-11-05 gate transport resets)](http://nanostack-dev-1340p:4320/postmortems/01a1ae3d-6e68-7cfc-9fcd-d5a3847a180b)
 - [ci-workflows#42](https://github.com/nanostack-dev/ci-workflows/pull/42)
+- [ci-workflows#51](https://github.com/nanostack-dev/ci-workflows/pull/51)
+- [skills#62](https://github.com/nanostack-dev/skills/pull/62)
