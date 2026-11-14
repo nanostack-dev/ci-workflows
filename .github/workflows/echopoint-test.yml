@@ -148,7 +148,27 @@ jobs:
         # Postmortem: docs/postmortems/2026-11-05-gate-transport-resets.md
         run: |
           set -uo pipefail
-          transport='Could not connect to|Connection refused by|TLS handshake|Could not resolve host|Request to [^ ]+ timed out'
+          # Keep in step with run_suites.sh in the echopoint-investigation routine:
+          # it checks every sample below against this regex before each run.
+          transport='Could not connect to|Connection refused by|TLS handshake|Could not resolve host|Request to [^ ]+ timed out|SSE stream read error: .*connection reset by peer'
+          # Known transport messages seen on gates and suites. A regex edit that
+          # stops matching one fails here instead of holding prod on a reset.
+          # Postmortem: docs/postmortems/2026-11-13-gate-sse-reset-not-transport.md
+          while IFS= read -r sample; do
+            [ -z "$sample" ] && continue
+            if ! jq -en --arg re "$transport" --arg s "$sample" '$s | test($re)' >/dev/null; then
+              echo "::error::Transport regex no longer matches a known transport error: $sample"
+              exit 1
+            fi
+          done <<'SAMPLES'
+          Could not connect to apidev.echopoint.dev: Post "https://apidev.echopoint.dev/flows": read tcp 192.168.2.18:33532->172.64.80.1:443: read: connection reset by peer
+          Connection refused by apidev.tryanchor.dev
+          TLS handshake with apidev.echopoint.dev failed
+          Could not resolve host "apidev.tryanchor.dev"
+          Request to apidev.echopoint.dev timed out: Post "https://apidev.echopoint.dev/flows": net/http: TLS handshake timeout
+          loop iteration 16 failed: Could not connect to apidev.tryanchor.dev: read: connection reset by peer
+          SSE stream read error: read tcp 192.168.2.18:33436->172.64.80.1:443: read: connection reset by peer
+          SAMPLES
           if [ ! -s "${RESULTS_FILE:-}" ]; then
             echo "::error::No flow results: the suite failed before running a flow."
             exit 1
