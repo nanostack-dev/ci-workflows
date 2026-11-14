@@ -17,3 +17,4 @@ The workflow files own exact inputs/defaults; guides explain boundaries and how 
 ## Postmortems
 
 - [2026-11-05 gate transport resets](postmortems/2026-11-05-gate-transport-resets.md): the gate reruns a transport-only failure once and reports leaked cleanups ([report](postmortems/2026-11-05-gate-transport-resets.html)).
+- [2026-11-13 gate SSE reset not transport](postmortems/2026-11-13-gate-sse-reset-not-transport.md): the gate's transport regex carries a sample self-test, kept in step with the routine's run_suites.sh ([report](postmortems/2026-11-13-gate-sse-reset-not-transport.html)).
