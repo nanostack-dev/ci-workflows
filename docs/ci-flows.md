@@ -33,7 +33,7 @@ pull_request touching .github/**
 | `detect-changes.yml` | workflow_call | glob the PR diff against backend/frontend patterns → outputs | Runs on every PR (it is what lets `ci-ok` stay required) |
 | `dispatch-deploy-event.yml` | workflow_call | validate JSON → `repository_dispatch` to infra | Empty `DEPLOY_TOKEN` fails the job (it used to skip silently) |
 | `migration-lint.yml` | workflow_call | squawk + custom rules on the migrations a PR adds or edits | PR only; pinned squawk downloaded with a token |
-| `echopoint-test.yml` | workflow_call from infra deploys | run a tag of Echopoint flows against an environment with the released CLI | The post-deploy gate. Retries transport resets (postmortem 2026-11-05) |
+| `echopoint-test.yml` | workflow_call from infra deploys | run a tag of Echopoint flows against an environment with the released CLI | The post-deploy gate. Reruns a flow that failed on a transport reset once, under its own idempotency key (postmortem 2026-11-05) |
 | `go-build-test.yml`, `frontend-verify.yml` | workflow_call from atelier only | lint ∥ tests ∥ image; frontend verify with the Vitest watchdog and private network namespace | Delete both when atelier moves to Dagger; first port the watchdog and netns fixes into the Dagger modules |
 | `actions/setup-dagger` | composite | install the pinned CLI (checksum) into the runner tool cache → set `DAGGER_ENGINE` | One `DAGGER_ENGINE` string per host: two strings kill each other's engine |
 
