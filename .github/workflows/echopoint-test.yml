@@ -197,7 +197,16 @@ jobs:
           status=0
           for flow in $failed; do
             echo "::warning::TRANSPORT-RERUN $flow"
-            if ! echopoint flows run "$flow" --environment "$FLOW_ENVIRONMENT" >/dev/null; then
+            # Each rerun needs its own idempotency key. The CLI derives one
+            # per job attempt and, for a single flow, used it unchanged
+            # (echopoint-cli <= v4.1.0), so every rerun after the first reused
+            # one key for another flow and got 409 IDEMPOTENCY_KEY_CONFLICT.
+            # The key must also differ from the suite's own launch of the
+            # flow, or the server replays that failed execution instead of
+            # running it again.
+            key="transport-rerun-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${flow}"
+            if ! echopoint flows run "$flow" --environment "$FLOW_ENVIRONMENT" \
+              --idempotency-key "$key" >/dev/null; then
               echo "::error::Flow $flow failed again on its rerun."
               status=1
             fi
