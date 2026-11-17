@@ -1,0 +1,339 @@
+{
+  "title": "Echopoint gate red on network resets: its transport reruns reused one idempotency key and got 409",
+  "short": "Gate reruns refused",
+  "service": "ci-workflows echopoint-test.yml (echopoint post-deploy gate) + echopoint-cli",
+  "date": "2026-11-16",
+  "severity": "SEV4",
+  "status": "in review",
+  "authors": [
+    "Nanostack routine (echopoint-investigation)"
+  ],
+  "summary": "On 2026-11-16 at 20:53Z the echopoint post-deploy gate on dev lost 4 of 65 flows to TCP resets between the 1340p runner and the Cloudflare edge. The gate reruns such flows once, but each rerun was a single-flow `echopoint flows run` in the same step, and the CLI derived one idempotency key per job attempt for all of them: the first rerun passed, the other three got 409 `IDEMPOTENCY_KEY_CONFLICT`, and the gate went red. A manual job rerun passed at 21:02Z. Prod was not held, because the deploy was a redeploy of the image prod already ran. Two reset cleanups leaked throwaway Anchor orgs on dev for 3 h 18 min, until this routine deleted them. echopoint-cli#106 (v4.1.1) and ci-workflows#53 give every launch its own key; the routine now reads every gate attempt for leaks.",
+  "impact": {
+    "text": "Dev and CI only. The red gate fired the deploy failure alert and needed a manual job rerun (9 min red). Prod was not held: the redeploy was of `sha-829f4b1`, already on prod since 16:50Z. Two throwaway Anchor organizations stayed on the dev Nanostack product for 3 h 18 min.",
+    "numbers": [
+      {
+        "value": "3 of 4",
+        "label": "transport reruns refused with 409"
+      },
+      {
+        "value": "9 min",
+        "label": "gate red until the manual rerun passed"
+      },
+      {
+        "value": "3 h 18 min",
+        "label": "two leaked dev orgs before deletion"
+      }
+    ]
+  },
+  "trigger": "TCP resets from the 1340p runner (192.168.2.18) to the Cloudflare edge (172.64.80.1) failed 4 flows at once in the echopoint gate; the gate's rerun step then relaunched 4 single flows under one derived idempotency key.",
+  "detection": "The gate job failed at 20:54:22Z and its `alert-deploy-failure` job ran at 20:54:24Z, so detection took 27 s from the first failed flow. The two `TRANSPORT-LEAK` warnings were seen by nobody: the gate only reports them, and its replacement attempt 2 hid attempt 1 from the run's job list. This routine found them at 00:10Z by reading attempt 1's log.",
+  "resolution": "A human reran the failed job at 20:59:31Z; attempt 2 passed all flows at 21:02:46Z. echopoint-cli#106 (derive the key per step and per flow, released v4.1.1, Action `v1` now v4.2.0) and ci-workflows#53 (explicit `transport-rerun-<run>-<attempt>-<flow>` key) removed the cause by 22:26Z. The routine deleted both leaked orgs at 00:12Z, verified the fix live at 00:20Z, and added a gate-log scan to `run_suites.sh`.",
+  "timeline": {
+    "events": [
+      {
+        "t": "2026-11-06T00:45:00Z",
+        "approx": true,
+        "kind": "change",
+        "label": "ci-workflows#42 adds the gate's transport rerun step",
+        "detail": "Each failed flow reruns with a plain `echopoint flows run <id>`, no explicit key.",
+        "link": "https://github.com/nanostack-dev/ci-workflows/pull/42"
+      },
+      {
+        "t": "2026-11-16T20:50:20Z",
+        "kind": "change",
+        "label": "Deploy Router redeploys echopoint sha-829f4b1 to dev",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/43953894269/attempts/1"
+      },
+      {
+        "t": "2026-11-16T20:52:07Z",
+        "kind": "note",
+        "label": "Anchor gate: one reset, its single rerun passes",
+        "detail": "Same path (192.168.2.18 → 172.64.80.1); one rerun takes the free job key and passes.",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/43953787558"
+      },
+      {
+        "t": "2026-11-16T20:53:57Z",
+        "kind": "trigger",
+        "label": "Echopoint gate: 4 flows fail on TCP resets",
+        "detail": "`Daily invitation email limit`, `Invitation email budget`, `Flow folders`, `HTTP call limit on Cloud`: 2 SSE reads, 1 POST, 1 PATCH in a poll.",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/43953894269/job/133603782485"
+      },
+      {
+        "t": "2026-11-16T20:53:58Z",
+        "kind": "note",
+        "label": "Gate warns TRANSPORT-LEAK for two cleanup-org nodes",
+        "detail": "`1342edd0` and `d04abe74`: the org DELETE was reset."
+      },
+      {
+        "t": "2026-11-16T20:54:19Z",
+        "kind": "note",
+        "label": "First rerun (1342edd0) passes with the job's key"
+      },
+      {
+        "t": "2026-11-16T20:54:21Z",
+        "kind": "note",
+        "label": "Reruns 2-4 refused: 409 IDEMPOTENCY_KEY_CONFLICT"
+      },
+      {
+        "t": "2026-11-16T20:54:24Z",
+        "kind": "detect",
+        "label": "Gate job red; alert-deploy-failure runs"
+      },
+      {
+        "t": "2026-11-16T20:59:31Z",
+        "kind": "mitigate",
+        "label": "Failed job rerun (attempt 2)",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/43953894269/attempts/2"
+      },
+      {
+        "t": "2026-11-16T21:02:46Z",
+        "kind": "resolve",
+        "label": "Attempt 2: every echopoint flow passes"
+      },
+      {
+        "t": "2026-11-16T22:25:45Z",
+        "kind": "followup",
+        "label": "ci-workflows#53: explicit key per rerun",
+        "link": "https://github.com/nanostack-dev/ci-workflows/pull/53"
+      },
+      {
+        "t": "2026-11-16T22:26:38Z",
+        "kind": "followup",
+        "label": "echopoint-cli#106 released as v4.1.1",
+        "link": "https://github.com/nanostack-dev/echopoint-cli/pull/106"
+      },
+      {
+        "t": "2026-11-17T00:12:28Z",
+        "kind": "followup",
+        "label": "Routine deletes both leaked orgs (200 → 204 → 404)"
+      },
+      {
+        "t": "2026-11-17T00:21:35Z",
+        "kind": "followup",
+        "label": "Live check: 2 flows in one step + explicit key, no 409"
+      }
+    ]
+  },
+  "whys": {
+    "problem": "The echopoint post-deploy gate went red on network resets it is built to rerun, and two throwaway orgs leaked on dev",
+    "because": [
+      {
+        "text": "Three of the four transport reruns were refused with 409 IDEMPOTENCY_KEY_CONFLICT, so the gate counted them as failures",
+        "evidence": "Gate log 20:54:20-21Z: `launch flow: unexpected status 409 … Idempotency key reused with different launch parameters`, then `failed again on its rerun`",
+        "because": [
+          {
+            "text": "Each rerun was a single-flow `flows run` in one step, and the CLI sent the same derived key for every one of them",
+            "evidence": "echopoint-cli#106: `deriveGitHubIdempotencyKey(flowIDs)` ignored its argument; `executeFlows` sent the base key unchanged for one flow",
+            "because": [
+              {
+                "id": "R1",
+                "root": true,
+                "text": "The CLI's Actions key named the job attempt, not the launch it guards (flow, step), and no test ran two single-flow runs in one job",
+                "evidence": "Behaviour since the CLI was first published (echopoint-cli#106 body); its new tests fail on the old derivation"
+              }
+            ]
+          },
+          {
+            "text": "Nobody saw the conflict in the 10 days since the rerun step shipped",
+            "evidence": "The routine's run log records gate reruns of one flow each (2026-11-12, 2026-11-16 anchor); one rerun takes the free job key and passes",
+            "because": [
+              {
+                "id": "R2",
+                "root": true,
+                "text": "The gate's rerun step has no test that drives it; it is checked only by live failures, and both its PRs say 'not exercised live'",
+                "evidence": "ci-workflows#42 and #53 Verification sections; the SAMPLES self-test checks only which errors count as transport"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "text": "Four flows failed at the same moment on resets to the Cloudflare edge",
+        "evidence": "`read tcp 192.168.2.18:* -> 172.64.80.1:443: connection reset by peer`, 20:52:07Z (anchor gate) to 20:53:57Z, during anchor and echopoint deploys",
+        "because": [
+          {
+            "text": "The 1340p → Cloudflare path resets connections in bursts, and the gate runs on that path",
+            "evidence": "Same resets in the 2026-11-05 and 2026-11-13 gate postmortems",
+            "because": [
+              {
+                "id": "R3",
+                "root": true,
+                "text": "The reset class has no owner: the path investigation actions of the 2026-11-05 and 2026-11-13 postmortems are still open",
+                "evidence": "[2026-11-13 postmortem](http://nanostack-dev-1340p:4320/postmortems/01a1d767-8e63-71c4-af60-eb150efdba4c) A4/A5 open"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "lens": "impact",
+        "text": "Two throwaway orgs stayed on the dev product for 3 h 18 min after the gate named their cleanup nodes",
+        "evidence": "Routine temp flows 00:12Z: GET 200, DELETE 204, GET 404 for `org_3MClO1WQ…` and `org_3MClFtjs…`",
+        "because": [
+          {
+            "text": "The gate only warns TRANSPORT-LEAK, and the green attempt 2 replaced attempt 1 in the run's job list",
+            "evidence": "`/runs/43953894269/jobs` lists attempt 2 only; attempt 1 needs `/attempts/1/jobs`",
+            "because": [
+              {
+                "id": "R4",
+                "root": true,
+                "text": "No one owns a gate leak between routine runs, and no sweep deletes throwaway orgs that outlive their run",
+                "evidence": "Sweep action A5 of the 2026-10-21 transport postmortem is still open; the session that reran and fixed the gate left the leaks"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "contributing": [
+    "The redeploy at 20:50Z ran together with anchor dev+prod deploys and an echopoint prod redeploy (20:49-20:57Z) on the same host path.",
+    "The fix session wrote no ledger row or postmortem, so the leaks and the 409 were not linked until the next routine run."
+  ],
+  "lessons": {
+    "well": [
+      "Another session found the 409, fixed both the CLI and the gate with tests, and shipped both within 1 h 32 min of the red gate.",
+      "The gate's TRANSPORT-LEAK lines named the exact flow and node, so the leaked orgs were easy to find and delete."
+    ],
+    "wrong": [
+      "The leaks waited for the next routine run, because the gate reports leaks but nobody acts on them in between.",
+      "The rerun step shipped on 2026-11-06 with no test of its launch path, only of its error classification."
+    ],
+    "lucky": [
+      "The redeploy carried the image prod already ran; on a feature merge, prod would have been held until a human reran the job.",
+      "The 409 refused the launch before any execution, so no rerun replayed or duplicated a side effect.",
+      "The leaked orgs were throwaway orgs on the shared dev product; a reset DELETE of a shared fixture would have left a real one half-deleted."
+    ]
+  },
+  "actions": [
+    {
+      "id": "A1",
+      "what": "Derive the Actions idempotency key per step and per flow; tests for two flows in one step and one flow in two steps",
+      "type": "prevent",
+      "owner": "echopoint-cli maintainers",
+      "status": "done",
+      "ticket": {
+        "label": "echopoint-cli#106",
+        "url": "https://github.com/nanostack-dev/echopoint-cli/pull/106"
+      },
+      "fixes": [
+        "R1"
+      ]
+    },
+    {
+      "id": "A2",
+      "what": "Gate reruns pass an explicit transport-rerun-<run>-<attempt>-<flow> key",
+      "type": "prevent",
+      "owner": "ci-workflows maintainers",
+      "status": "done",
+      "ticket": {
+        "label": "ci-workflows#53",
+        "url": "https://github.com/nanostack-dev/ci-workflows/pull/53"
+      },
+      "fixes": [
+        "R1",
+        "R2"
+      ]
+    },
+    {
+      "id": "A3",
+      "what": "A dispatchable self-test of echopoint-test.yml that forces two or more transport reruns (stub CLI or a flow that resets) and asserts each relaunches",
+      "type": "prevent",
+      "owner": "ci-workflows maintainers",
+      "due": "2026-11-30",
+      "status": "open",
+      "fixes": [
+        "R2"
+      ]
+    },
+    {
+      "id": "A4",
+      "what": "run_suites.sh reads every Deploy Router gate attempt since the last run and prints GATE-TRANSPORT-LEAK and GATE-RERUN-REFUSED lines",
+      "type": "detect",
+      "owner": "Nanostack routine (echopoint-investigation)",
+      "status": "done",
+      "fixes": [
+        "R4",
+        "R2"
+      ]
+    },
+    {
+      "id": "A5",
+      "what": "Sweep throwaway Anchor orgs and product users on the shared dev product that outlive their run by more than 1 h",
+      "type": "mitigate",
+      "owner": "infra and anchor maintainers",
+      "due": "2026-11-30",
+      "status": "open",
+      "fixes": [
+        "R4"
+      ]
+    },
+    {
+      "id": "A6",
+      "what": "flow-suite-testing skill: give every CI rerun its own idempotency key; whoever reruns a gate deletes its TRANSPORT-LEAK resources",
+      "type": "process",
+      "owner": "Nanostack routine (echopoint-investigation)",
+      "status": "done",
+      "fixes": [
+        "R4",
+        "R1"
+      ]
+    },
+    {
+      "id": "A7",
+      "what": "Own the 1340p → Cloudflare reset investigation (A4/A5 of the 2026-11-13 postmortem)",
+      "type": "prevent",
+      "owner": "infra maintainers",
+      "due": "2026-11-27",
+      "status": "open",
+      "fixes": [
+        "R3"
+      ]
+    }
+  ],
+  "responders": [
+    {
+      "role": "Gate rerun",
+      "name": "repository maintainer (manual job rerun)"
+    },
+    {
+      "role": "Fix",
+      "name": "agent session (echopoint-cli#106, ci-workflows#53)"
+    },
+    {
+      "role": "Postmortem, leak cleanup",
+      "name": "Nanostack routine (echopoint-investigation)"
+    }
+  ],
+  "messaging": {
+    "internal": "Echopoint dev gate went red on 2026-11-16 20:54Z: 4 flows lost to TCP resets, and 3 of the 4 reruns were refused (409 IDEMPOTENCY_KEY_CONFLICT) because the CLI reused one key per job. Rerun passed 21:02Z; prod unaffected. Fixed by echopoint-cli#106 and ci-workflows#53. Two leaked dev orgs deleted 2026-11-17 00:12Z.",
+    "external": "None: dev and CI only."
+  },
+  "links": [
+    {
+      "label": "Atelier",
+      "url": "http://nanostack-dev-1340p:4320/postmortems/01a1e6e5-ede5-7c99-914f-85d09c438aa9"
+    },
+    {
+      "label": "Red gate attempt 1",
+      "url": "https://github.com/nanostack-dev/infra/actions/runs/43953894269/attempts/1"
+    },
+    {
+      "label": "echopoint-cli#106",
+      "url": "https://github.com/nanostack-dev/echopoint-cli/pull/106"
+    },
+    {
+      "label": "ci-workflows#53",
+      "url": "https://github.com/nanostack-dev/ci-workflows/pull/53"
+    },
+    {
+      "label": "Earlier: 2026-11-13 gate SSE reset postmortem",
+      "url": "http://nanostack-dev-1340p:4320/postmortems/01a1d767-8e63-71c4-af60-eb150efdba4c"
+    },
+    {
+      "label": "Earlier: 2026-11-05 gate transport resets postmortem",
+      "url": "http://nanostack-dev-1340p:4320/postmortems/01a1ae3d-6e68-7cfc-9fcd-d5a3847a180b"
+    }
+  ]
+}

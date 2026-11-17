@@ -18,3 +18,4 @@ The workflow files own exact inputs/defaults; guides explain boundaries and how 
 
 - [2026-11-05 gate transport resets](postmortems/2026-11-05-gate-transport-resets.md): the gate reruns a transport-only failure once and reports leaked cleanups ([report](postmortems/2026-11-05-gate-transport-resets.html)).
 - [2026-11-13 gate SSE reset not transport](postmortems/2026-11-13-gate-sse-reset-not-transport.md): the gate's transport regex carries a sample self-test, kept in step with the routine's run_suites.sh ([report](postmortems/2026-11-13-gate-sse-reset-not-transport.html)).
+- [2026-11-16 gate rerun idempotency conflict](postmortems/2026-11-16-gate-rerun-idempotency-conflict.md): each transport rerun launches with its own idempotency key (`transport-rerun-<run>-<attempt>-<flow>`), and echopoint-cli derives keys per step and per flow since v4.1.1 ([report](postmortems/2026-11-16-gate-rerun-idempotency-conflict.html)).
