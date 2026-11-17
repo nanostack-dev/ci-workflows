@@ -51,6 +51,13 @@ These follow Dagger's [checks](https://github.com/dagger/dagger/blob/main/docs/c
 
 Dagger 1.0 is in beta. Upgrades are deliberate:
 
+0. Check that a fresh engine of the new version starts: `docker run --rm --privileged registry.dagger.io/engine:<version>` must stay up (stop it with Ctrl-C). A warm engine on `1340p` does not prove this, because an engine that started before a fault keeps working.
 1. Bump `version` and the checksums in `setup-dagger/action.yml` in this repository.
 2. In each repository, bump the pinned commit of the `setup-dagger` action in the workflows (callers pin it by SHA, so step 1 alone changes nothing for them), bump `engineVersion` in `.dagger/modules/*/dagger-module.toml`, run `dagger check`, and open a pull request.
 3. Expect the first run on each host to be cold, about the length of a full run without cache. The CLI starts the new engine and removes the old one. Then delete the old cache on the host: `docker volume rm dagger-engine-<old version>`.
+
+## Current pin: v1.0.0-beta.24
+
+The default is `v1.0.0-beta.24`. On 2026-11-17 a freshly started `v1.0.0-beta.27` engine exited at once with `failed to create engine: merge the engine image's entries: root 4875 did not merge (expired true, retained false)`. Every `dagger check` on a fresh engine (GitHub-hosted runners, the per-job devbox VM) then waited 10 minutes and failed with `start engine: new client: context deadline exceeded`. The beta.27 engine already running on `1340p` kept working, which hid the fault there. A fresh beta.24 engine starts normally, so every repository went back to beta.24 ([troubleshooting](../development/troubleshooting.md#every-dagger-check-fails-with-start-engine-new-client-context-deadline-exceeded)).
+
+The action keeps the beta.27 checksums, so `version: v1.0.0-beta.27` still installs that CLI. Move the default forward only to a release that passes step 0 of the upgrade.
