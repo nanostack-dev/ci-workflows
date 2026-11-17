@@ -7,3 +7,9 @@
 - A workflow works here but fails in the app: verify the caller's exact repository/ref, working directories, runner label and explicit secret/permission contract.
 
 Capture verified causes and fixes here or in the owning capability guide, linked to the relevant caller run.
+
+## Every Dagger check fails with `start engine: new client: context deadline exceeded`
+
+Symptom: a `dagger check` job waits 10 minutes at `connecting to engine`, then fails. On the runner, `docker logs dagger-engine-<version>` shows why the engine exited. On 2026-11-17, `v1.0.0-beta.27` failed with `failed to create engine: merge the engine image's entries: root 4875 did not merge (expired true, retained false)` on every fresh start; engines started earlier kept working.
+
+Check: `docker run --rm --privileged registry.dagger.io/engine:<version>` must stay up. If it exits, pin the last version whose fresh engine starts (`version` default in [setup-dagger](../../.github/actions/setup-dagger/action.yml), then each repository's `engineVersion` and action SHA), as [Dagger CI](../technical/dagger.md#current-pin-v100-beta24) records for beta.27.
