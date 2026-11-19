@@ -148,10 +148,10 @@ flowchart TD
 
 | ID | Action | Type | Owner | Due | Status | Ticket | Fixes |
 |---|---|---|---|---|---|---|---|
-| A1 | Gate regex matches `connection reset by peer` and TCP `i/o timeout` anywhere, with claim and launch samples | prevent | Nanostack routine (echopoint-investigation) | 2026-11-19 | done | [ci-workflows PR](https://github.com/nanostack-dev/ci-workflows/pulls) | R1, R2 |
-| A2 | Gate prints TRANSPORT-LEAK for every transport-failed flow before its verdict | mitigate | Nanostack routine (echopoint-investigation) | 2026-11-19 | done | [ci-workflows PR](https://github.com/nanostack-dev/ci-workflows/pulls) | R4 |
+| A1 | Gate regex matches `connection reset by peer` and TCP `i/o timeout` anywhere, with claim and launch samples | prevent | Nanostack routine (echopoint-investigation) | 2026-11-19 | done | [ci-workflows#56](https://github.com/nanostack-dev/ci-workflows/pull/56) | R1, R2 |
+| A2 | Gate prints TRANSPORT-LEAK for every transport-failed flow before its verdict | mitigate | Nanostack routine (echopoint-investigation) | 2026-11-19 | done | [ci-workflows#56](https://github.com/nanostack-dev/ci-workflows/pull/56) | R4 |
 | A3 | run_suites.sh uses the same condition rule, reruns CLI claim/complete failures like launch failures, and prints GATE-TRANSPORT-MISSED when a gate refused a flow its rule calls transport | detect | Nanostack routine (echopoint-investigation) | 2026-11-19 | done |  | R5, R2 |
-| A4 | Skill line: classify transport by condition, never by caller wording | process | Nanostack routine (echopoint-investigation) | 2026-11-19 | done | [skills PR](https://github.com/nanostack-dev/skills/pulls) | R1 |
+| A4 | Skill line: classify transport by condition, never by caller wording | process | Nanostack routine (echopoint-investigation) | 2026-11-19 | done | [skills#71](https://github.com/nanostack-dev/skills/pull/71) | R1 |
 | A5 | Find why the 1340p → Cloudflare edge path resets connections (same as 2026-11-16 A7) | prevent | Infra maintainers | 2026-11-27 | open |  | R3 |
 
 ## Responders
@@ -170,6 +170,7 @@ None: dev and CI only.
 
 ## Supporting information
 
+- [Atelier](http://nanostack-dev-1340p:4320/postmortems/01a1f277-f56b-7be8-8c5c-db803d248dba)
 - [Deploy Router run 44447148308 (red)](https://github.com/nanostack-dev/infra/actions/runs/44447148308)
 - [Deploy Router run 44447240413 (green, promoted)](https://github.com/nanostack-dev/infra/actions/runs/44447240413)
 - [Previous: 2026-11-13 gate SSE reset not transport](http://nanostack-dev-1340p:4320/postmortems/01a1d767-8e63-71c4-af60-eb150efdba4c)
