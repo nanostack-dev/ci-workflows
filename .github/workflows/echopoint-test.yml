@@ -150,10 +150,13 @@ jobs:
           set -uo pipefail
           # Keep in step with run_suites.sh in the echopoint-investigation routine:
           # it checks every sample below against this regex before each run.
-          transport='Could not connect to|Connection refused by|TLS handshake|Could not resolve host|Request to [^ ]+ timed out|SSE stream read error: .*connection reset by peer'
+          transport='Could not connect to|Connection refused by|TLS handshake|Could not resolve host|Request to [^ ]+ timed out|connection reset by peer|(dial|read|write) tcp [^ ]+: i/o timeout'
           # Known transport messages seen on gates and suites. A regex edit that
           # stops matching one fails here instead of holding prod on a reset.
           # Postmortem: docs/postmortems/2026-11-13-gate-sse-reset-not-transport.md
+          # A reset or an i/o timeout is transport wherever it appears: in a node, an SSE
+          # stream, or the CLI's own call to the control plane (claim, launch, complete).
+          # Postmortem: docs/postmortems/2026-11-19-gate-claim-reset-not-transport.md
           while IFS= read -r sample; do
             [ -z "$sample" ] && continue
             if ! jq -en --arg re "$transport" --arg s "$sample" '$s | test($re)' >/dev/null; then
@@ -168,6 +171,8 @@ jobs:
           Request to apidev.echopoint.dev timed out: Post "https://apidev.echopoint.dev/flows": net/http: TLS handshake timeout
           loop iteration 16 failed: Could not connect to apidev.tryanchor.dev: read: connection reset by peer
           SSE stream read error: read tcp 192.168.2.18:33436->172.64.80.1:443: read: connection reset by peer
+          claim ephemeral Job: Post "https://api.echopoint.dev/runner/ephemeral/executions/01a1f1b7-99e7-71a8-acd0-f13a3decec2d/claim": read tcp 192.168.2.18:48938->172.64.80.1:443: read: connection reset by peer; inspect execution 01a1f1b7-99e7-71a8-acd0-f13a3decec2d before retrying
+          launch flow: Post "https://api.echopoint.dev/flows/x/launch": read tcp 192.168.2.18:48938->172.64.80.1:443: i/o timeout
           SAMPLES
           if [ ! -s "${RESULTS_FILE:-}" ]; then
             echo "::error::No flow results: the suite failed before running a flow."
@@ -176,11 +181,11 @@ jobs:
           failed=$(jq -r '.results[]? | select(.success | not) | .flow_id' "$RESULTS_FILE")
           other=$(jq -r --arg re "$transport" '.results[]? | select(.success | not)
             | select((.error_message // "") | test($re) | not) | .flow_id' "$RESULTS_FILE")
-          if [ -z "$failed" ] || [ -n "$other" ]; then
-            echo "::error::Flows failed on more than a transport error: ${other//$'\n'/ }."
-            exit 1
-          fi
-          for flow in $failed; do
+          # Report leaks of every transport-failed flow before the verdict: a gate that
+          # fails on another flow still leaves these resources behind.
+          tfailed=$(jq -r --arg re "$transport" '.results[]? | select(.success | not)
+            | select((.error_message // "") | test($re)) | .flow_id' "$RESULTS_FILE")
+          for flow in $tfailed; do
             echopoint flows get "$flow" -o json \
               | jq -r '.flow_definition.nodes[] | select(.run_when == "always" and .type == "request") | .id' \
               | while read -r node; do
@@ -189,6 +194,10 @@ jobs:
                     | "::warning::TRANSPORT-LEAK \($f) \(.node_id) \(.status): delete what this cleanup node owns"' "$RESULTS_FILE"
                 done
           done
+          if [ -z "$failed" ] || [ -n "$other" ]; then
+            echo "::error::Flows failed on more than a transport error: ${other//$'\n'/ }."
+            exit 1
+          fi
           count=$(echo "$failed" | wc -l | tr -d ' ')
           if [ "$count" -gt 5 ]; then
             echo "::error::HOST-NETWORK-DEGRADED: $count flows failed on transport errors; no rerun."
