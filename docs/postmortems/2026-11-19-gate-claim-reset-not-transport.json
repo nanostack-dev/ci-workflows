@@ -235,8 +235,8 @@
         "R2"
       ],
       "ticket": {
-        "label": "ci-workflows PR",
-        "url": "https://github.com/nanostack-dev/ci-workflows/pulls"
+        "label": "ci-workflows#56",
+        "url": "https://github.com/nanostack-dev/ci-workflows/pull/56"
       }
     },
     {
@@ -250,8 +250,8 @@
         "R4"
       ],
       "ticket": {
-        "label": "ci-workflows PR",
-        "url": "https://github.com/nanostack-dev/ci-workflows/pulls"
+        "label": "ci-workflows#56",
+        "url": "https://github.com/nanostack-dev/ci-workflows/pull/56"
       }
     },
     {
@@ -277,8 +277,8 @@
         "R1"
       ],
       "ticket": {
-        "label": "skills PR",
-        "url": "https://github.com/nanostack-dev/skills/pulls"
+        "label": "skills#71",
+        "url": "https://github.com/nanostack-dev/skills/pull/71"
       }
     },
     {
@@ -304,6 +304,10 @@
     "external": "None: dev and CI only."
   },
   "links": [
+    {
+      "label": "Atelier",
+      "url": "http://nanostack-dev-1340p:4320/postmortems/01a1f277-f56b-7be8-8c5c-db803d248dba"
+    },
     {
       "label": "Deploy Router run 44447148308 (red)",
       "url": "https://github.com/nanostack-dev/infra/actions/runs/44447148308"
