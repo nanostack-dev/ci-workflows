@@ -1,0 +1,324 @@
+{
+  "title": "Echopoint gate held a deploy on a reset of the CLI's own ephemeral claim",
+  "short": "Gate claim reset",
+  "service": "ci-workflows (echopoint-test.yml post-deploy gate)",
+  "date": "2026-11-19",
+  "severity": "SEV4",
+  "status": "in review",
+  "authors": [
+    "Nanostack routine (echopoint-investigation)"
+  ],
+  "summary": "At 02:51-02:53Z five connections from the gate runner to the Cloudflare edge reset during the echopoint gate for echopoint#879. Four failures read `Could not connect to …` and were transport by the gate's rule. The fifth was the CLI's own call `claim ephemeral Job: Post …/claim: … connection reset by peer`, which the regex did not list, so the gate reran nothing and held prod. The dispatch for echopoint#880, 45 s later, carried #879 too and promoted it at 02:57Z, so prod waited 3.5 min. The gate's leak report also never ran, because it sits after the verdict, and a throwaway org from a reset cleanup stayed until the routine deleted it at 06:2xZ. This is the third time the transport rule missed a new wording (2026-11-05 runner nodes, 2026-11-13 SSE, now the CLI claim).",
+  "impact": {
+    "text": "No customer impact. Prod echopoint promotion of echopoint#879 skipped by one gate; the next dispatch promoted the same code 3.5 min later. One throwaway Anchor org on dev left unreported for about 3.5 h.",
+    "numbers": [
+      {
+        "value": "1",
+        "label": "red gate (infra run 44447148308)"
+      },
+      {
+        "value": "3.5 min",
+        "label": "prod held"
+      },
+      {
+        "value": "5",
+        "label": "flows reset, 1 misclassified"
+      },
+      {
+        "value": "1",
+        "label": "throwaway org leak not reported"
+      }
+    ]
+  },
+  "trigger": "At 02:51:44Z the CLI's claim of an ephemeral execution for `Admin impersonation refusals` (fc768d01) got `connection reset by peer` from 172.64.80.1; at 02:53:19Z the rerun step classified it as a product failure and failed the gate.",
+  "detection": "The deploy-failure alert ran at 02:53:21Z, overnight. grafana-watch saw the red gate at its next run but filed it on the suite reset row as \"same trigger\". The routine found the misclassification at its 2026-11-19T06:08Z run while reading the gate log line by line.",
+  "resolution": "The gate's regex now counts `connection reset by peer` and TCP `i/o timeout` as transport wherever they appear, with samples for the claim and launch calls, and reports leaks of transport-failed flows before its verdict. The routine's run_suites.sh uses the same rule, reruns CLI control-plane failures (claim, complete) like launch failures, and prints `GATE-TRANSPORT-MISSED` for any gate that refused a flow its own rule calls transport.",
+  "timeline": {
+    "events": [
+      {
+        "t": "2026-11-13T23:50:00Z",
+        "approx": true,
+        "kind": "change",
+        "label": "ci-workflows#51 adds the SSE reset wording to the gate",
+        "detail": "One more wording, not the reset condition itself.",
+        "link": "https://github.com/nanostack-dev/ci-workflows/pull/51"
+      },
+      {
+        "t": "2026-11-19T02:47:23Z",
+        "kind": "change",
+        "label": "echopoint#879 merged (remote MCP endpoint)",
+        "link": "https://github.com/nanostack-dev/echopoint/pull/879"
+      },
+      {
+        "t": "2026-11-19T02:49:02Z",
+        "kind": "change",
+        "label": "echopoint#880 merged",
+        "link": "https://github.com/nanostack-dev/echopoint/pull/880"
+      },
+      {
+        "t": "2026-11-19T02:50:57Z",
+        "kind": "note",
+        "label": "Echopoint gate starts on dev (run 44447148308)",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/44447148308"
+      },
+      {
+        "t": "2026-11-19T02:51:44Z",
+        "kind": "trigger",
+        "label": "Reset on the CLI's ephemeral claim of fc768d01",
+        "detail": "`claim ephemeral Job: Post \"https://api.echopoint.dev/runner/ephemeral/executions/01a1f1b7-…/claim\": read tcp 192.168.2.18:48938->172.64.80.1:443: read: connection reset by peer`",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/44447148308/job/135302299274"
+      },
+      {
+        "t": "2026-11-19T02:53:07Z",
+        "kind": "note",
+        "label": "Reset on `Cursor searches: webhooks and resources` cleanup-org",
+        "detail": "DELETE of org_3MJ7OWsBemr1YbZ5TRE3d8A5KFd lost; four flows failed in all on `Could not connect to`."
+      },
+      {
+        "t": "2026-11-19T02:53:19Z",
+        "kind": "note",
+        "label": "Rerun step refuses: \"more than a transport error\"",
+        "detail": "`Flows failed on more than a transport error: fc768d01`. No rerun, no TRANSPORT-LEAK report (it ran after the verdict).",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/44447148308/job/135302299274"
+      },
+      {
+        "t": "2026-11-19T02:53:21Z",
+        "kind": "detect",
+        "label": "alert-deploy-failure posts to Discord",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/44447148308"
+      },
+      {
+        "t": "2026-11-19T02:54:16Z",
+        "kind": "mitigate",
+        "label": "Gate for echopoint#880 starts (run 44447240413)",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/44447240413"
+      },
+      {
+        "t": "2026-11-19T02:57:28Z",
+        "kind": "resolve",
+        "label": "Prod echopoint deployed with #879 and #880",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/44447240413"
+      },
+      {
+        "t": "2026-11-19T06:15:00Z",
+        "approx": true,
+        "kind": "note",
+        "label": "Routine reads the gate log and finds the claim wording"
+      },
+      {
+        "t": "2026-11-19T06:25:00Z",
+        "approx": true,
+        "kind": "followup",
+        "label": "Leaked throwaway org deleted by a temp flow"
+      },
+      {
+        "t": "2026-11-19T06:40:00Z",
+        "approx": true,
+        "kind": "followup",
+        "label": "Gate rule matches the reset condition; leaks before verdict"
+      }
+    ]
+  },
+  "whys": {
+    "problem": "The echopoint gate for echopoint#879 went red on TCP resets and skipped the prod promotion",
+    "because": [
+      {
+        "text": "The rerun step called the `Admin impersonation refusals` failure a product failure, so it reran none of the five reset flows",
+        "evidence": "Gate log: `##[error]Flows failed on more than a transport error: fc768d01-ba1c-4bac-8178-41ca2ba144a7.` (job 135302299274)",
+        "because": [
+          {
+            "text": "The failure was the CLI's own claim call (`claim ephemeral Job: … reset by peer`); the regex knew resets only from runner nodes and SSE",
+            "evidence": "`transport='Could not connect to|Connection refused by|TLS handshake|Could not resolve host|Request to [^ ]+ timed out|SSE stream read error: .*connection reset by peer'` in echopoint-test.yml at 4723f2a",
+            "because": [
+              {
+                "text": "Each earlier fix added the one wording that had just failed a gate (runner node on 2026-11-05, SSE on 2026-11-13)",
+                "evidence": "ci-workflows#42 and #51 each add one alternative; the 2026-11-13 postmortem action reads `Add the SSE reset class to the gate regex`",
+                "because": [
+                  {
+                    "id": "R1",
+                    "root": true,
+                    "text": "The transport rule lists wordings per caller, not the condition (a reset, an i/o timeout), so each new network caller misses once"
+                  }
+                ]
+              },
+              {
+                "text": "The sample self-test proves known wordings still match; it cannot reveal a caller nobody has listed",
+                "evidence": "SAMPLES held 7 messages, all from runner nodes and SSE; none from the CLI's launch, claim or complete calls",
+                "because": [
+                  {
+                    "id": "R2",
+                    "root": true,
+                    "text": "Samples come only from failures already seen, not from the list of calls the CLI makes to the control plane during a gate"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "text": "Five connections from the gate runner to the Cloudflare edge reset within 90 s",
+        "evidence": "`read tcp 192.168.2.18:* ->172.64.80.1:443: read: connection reset by peer` at 02:51:44, 02:51:49, 02:51:52, 02:53:05 and 02:53:07Z",
+        "because": [
+          {
+            "text": "Resets recur on this path every few days and nobody has captured one at the host to see who sends the RST",
+            "evidence": "Ledger suite transport row: resets on 2026-11-05, -07, -08, -10, -11, -12, -13, -15, -18, -19; human action A7 of the 2026-11-16 postmortem, due 2026-11-27",
+            "because": [
+              {
+                "id": "R3",
+                "root": true,
+                "text": "Finding the reset needs packet captures on the 1340p runner host, a human task with an owner but no result yet (open since 2026-11-05)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "lens": "impact",
+        "text": "A throwaway org from the reset cleanup went unreported, and the red gate was first filed as a known reset",
+        "evidence": "No `TRANSPORT-LEAK` line in job 135302299274; ledger row 53 note 2026-11-19T02:53Z `same trigger, logged here`",
+        "because": [
+          {
+            "text": "The gate printed leaks only after the verdict, and exited at the verdict when any failure was not transport",
+            "evidence": "echopoint-test.yml at 4723f2a: `exit 1` on `other` before the `for flow in $failed` leak loop",
+            "because": [
+              {
+                "id": "R4",
+                "root": true,
+                "text": "The leak report depends on the verdict, so the cases that fail the gate are the cases that hide leaks"
+              }
+            ]
+          },
+          {
+            "text": "Triage matched the reset text to the reset row and did not ask whether the gate's own verdict was right",
+            "evidence": "run_suites.sh gate scan printed only TRANSPORT-LEAK and RERUN-REFUSED lines; no check compared the gate's verdict with the routine's rule",
+            "because": [
+              {
+                "id": "R5",
+                "root": true,
+                "text": "Nothing compares the gate's transport verdict with the routine's rule, so a misclassified gate looks like an ordinary reset"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "contributing": [
+    "The impersonation flow's claim happens before any node runs, so the CLI reports the error itself; runner wordings never cover it.",
+    "The deploy-failure alert lands in Discord at night with nobody to read it."
+  ],
+  "lessons": {
+    "well": [
+      "The gate's sample self-test and the routine's drift check kept both rules in step for the known wordings.",
+      "Reading the gate log line by line, not only the ledger, found the real cause."
+    ],
+    "wrong": [
+      "Two earlier postmortems fixed the wording that failed, not the transport condition behind it.",
+      "A fix that names one caller left the next caller (the CLI itself) uncovered."
+    ],
+    "lucky": [
+      "echopoint#880 merged 2 min after #879, so its dispatch promoted the same code 3.5 min later. Without it, prod would have waited for the next echopoint merge, hours later.",
+      "The leaked org was a throwaway with no data; a leaked product user or API key would carry real access."
+    ]
+  },
+  "actions": [
+    {
+      "id": "A1",
+      "what": "Gate regex matches `connection reset by peer` and TCP `i/o timeout` anywhere, with claim and launch samples",
+      "type": "prevent",
+      "owner": "Nanostack routine (echopoint-investigation)",
+      "due": "2026-11-19",
+      "status": "done",
+      "fixes": [
+        "R1",
+        "R2"
+      ],
+      "ticket": {
+        "label": "ci-workflows PR",
+        "url": "https://github.com/nanostack-dev/ci-workflows/pulls"
+      }
+    },
+    {
+      "id": "A2",
+      "what": "Gate prints TRANSPORT-LEAK for every transport-failed flow before its verdict",
+      "type": "mitigate",
+      "owner": "Nanostack routine (echopoint-investigation)",
+      "due": "2026-11-19",
+      "status": "done",
+      "fixes": [
+        "R4"
+      ],
+      "ticket": {
+        "label": "ci-workflows PR",
+        "url": "https://github.com/nanostack-dev/ci-workflows/pulls"
+      }
+    },
+    {
+      "id": "A3",
+      "what": "run_suites.sh uses the same condition rule, reruns CLI claim/complete failures like launch failures, and prints GATE-TRANSPORT-MISSED when a gate refused a flow its rule calls transport",
+      "type": "detect",
+      "owner": "Nanostack routine (echopoint-investigation)",
+      "due": "2026-11-19",
+      "status": "done",
+      "fixes": [
+        "R5",
+        "R2"
+      ]
+    },
+    {
+      "id": "A4",
+      "what": "Skill line: classify transport by condition, never by caller wording",
+      "type": "process",
+      "owner": "Nanostack routine (echopoint-investigation)",
+      "due": "2026-11-19",
+      "status": "done",
+      "fixes": [
+        "R1"
+      ],
+      "ticket": {
+        "label": "skills PR",
+        "url": "https://github.com/nanostack-dev/skills/pulls"
+      }
+    },
+    {
+      "id": "A5",
+      "what": "Find why the 1340p → Cloudflare edge path resets connections (same as 2026-11-16 A7)",
+      "type": "prevent",
+      "owner": "Infra maintainers",
+      "due": "2026-11-27",
+      "status": "open",
+      "fixes": [
+        "R3"
+      ]
+    }
+  ],
+  "responders": [
+    {
+      "role": "Investigation",
+      "name": "Nanostack routine (echopoint-investigation)"
+    }
+  ],
+  "messaging": {
+    "internal": "Echopoint gate for #879 went red on five TCP resets; one was the CLI's own claim call, a wording the gate's transport rule did not list, so nothing reran and the leak report was skipped. #880's gate promoted the same code 3.5 min later. Gate now classifies resets and i/o timeouts anywhere and reports leaks before its verdict.",
+    "external": "None: dev and CI only."
+  },
+  "links": [
+    {
+      "label": "Deploy Router run 44447148308 (red)",
+      "url": "https://github.com/nanostack-dev/infra/actions/runs/44447148308"
+    },
+    {
+      "label": "Deploy Router run 44447240413 (green, promoted)",
+      "url": "https://github.com/nanostack-dev/infra/actions/runs/44447240413"
+    },
+    {
+      "label": "Previous: 2026-11-13 gate SSE reset not transport",
+      "url": "http://nanostack-dev-1340p:4320/postmortems/01a1d767-8e63-71c4-af60-eb150efdba4c"
+    },
+    {
+      "label": "First: 2026-11-05 gate transport resets",
+      "url": "postmortems/2026-11-05-gate-transport-resets.md"
+    }
+  ]
+}
