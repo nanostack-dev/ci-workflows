@@ -57,6 +57,27 @@ jobs:
         with:
           go-version-file: .ci-workflows/go.mod
           cache: false
+      # Downloads apart from the lint, so a proxy.golang.org 5xx or stream reset
+      # is retried and a lint finding is not.
+      - name: Download the Go tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GOPROXY="${GOPROXY:-https://proxy.golang.org,direct}"
+          retry() {
+            local attempt delay=5
+            for attempt in 1 2 3 4 5; do
+              "$@" && return 0
+              [[ "$attempt" == 5 ]] && break
+              echo "::warning::$* failed (attempt $attempt of 5); retrying in ${delay}s."
+              sleep "$delay"
+              delay=$((delay * 2))
+            done
+            echo "::error::$* failed after 5 attempts."
+            return 1
+          }
+          (cd .ci-workflows && retry go mod download)
+          retry env GOBIN="$RUNNER_TEMP/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
       - name: actionlint
         env:
           EXTRA: ${{ inputs.extra_labels }}
@@ -64,7 +85,7 @@ jobs:
           set -euo pipefail
           labels="nanostack-light, nanostack-dev, nanostack-dagger-pool, nanostack-prod${EXTRA:+, $EXTRA}"
           printf 'self-hosted-runner:\n  labels: [%s]\n' "$labels" > "$RUNNER_TEMP/actionlint.yaml"
-          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -config-file "$RUNNER_TEMP/actionlint.yaml" \
+          "$RUNNER_TEMP/bin/actionlint" -config-file "$RUNNER_TEMP/actionlint.yaml" \
             -ignore 'property "workflow_(repository|sha)" is not defined' \
             -ignore 'unexpected key "queue" for "concurrency" section'
       - name: ci-lint

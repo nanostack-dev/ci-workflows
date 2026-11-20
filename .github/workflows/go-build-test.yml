@@ -180,10 +180,117 @@ jobs:
           cache: ${{ runner.environment == 'github-hosted' }}
           cache-dependency-path: ${{ inputs.cache_dependency_path }}
 
+      # Retried: proxy.golang.org answers with transient 5xx and HTTP/2 stream
+      # resets (`stream error: ... INTERNAL_ERROR`, 7 jobs 2026-11-06..20), and
+      # go does not retry a module fetch itself. Only the download is retried,
+      # never the lint or the tests (docs/ci-principles.md section 7).
+      # GOPROXY keeps a value the runner sets; otherwise it is Go's default.
       - name: Download dependencies first
+        shell: bash
+        env:
+          DIR: ${{ inputs.download_dependencies_dir }}
         run: |
-          cd "${{ inputs.download_dependencies_dir }}"
-          go mod download
+          set -euo pipefail
+          export GOPROXY="${GOPROXY:-https://proxy.golang.org,direct}"
+          cd "$DIR"
+          delay=5
+          for attempt in 1 2 3 4 5; do
+            go mod download && exit 0
+            [[ "$attempt" == 5 ]] && break
+            echo "::warning::go mod download failed (attempt $attempt of 5); retrying in ${delay}s."
+            sleep "$delay"
+            delay=$((delay * 2))
+          done
+          echo "::error::go mod download failed after 5 attempts."
+          exit 1
+
+      # golangci-lint-action downloads the binary anonymously and cannot be
+      # retried: on 2026-11-09 GitHub answered its release download with 504
+      # for an hour (21 lint jobs). This step installs the same version with
+      # the workflow token, retries, and checks the release's SHA-256 list,
+      # then the action runs it with install-mode: none. The binary lives in
+      # the tool cache, so a persistent runner downloads it once per version.
+      # The version comes from the same place the action reads it: the
+      # pinned default, or lint_version_file (a .golangci-lint-version or
+      # .tool-versions file) relative to lint_working_directory. A go.mod that
+      # names golangci-lint, an inexact version (v2.3) or an unknown platform
+      # leaves installed=false, and the action installs it as before.
+      - name: Install golangci-lint
+        id: golangci
+        shell: bash
+        env:
+          VERSION: ${{ inputs.lint_version_file == '' && 'v2.14.0' || '' }}
+          VERSION_FILE: ${{ inputs.lint_version_file }}
+          WORKDIR: ${{ inputs.lint_working_directory }}
+          TOOL_CACHE: ${{ runner.tool_cache }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          fallback() {
+            echo "::notice::$1; golangci-lint-action installs golangci-lint itself."
+            echo "installed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          version="$VERSION"
+          if [[ -z "$version" ]]; then
+            file="$VERSION_FILE"
+            [[ -n "$WORKDIR" ]] && file="$WORKDIR/$file"
+            if grep -qE 'github.com/golangci/golangci-lint/v2[[:space:]]v' "${WORKDIR:-.}/go.mod" 2> /dev/null; then
+              fallback "go.mod names a golangci-lint version"
+            fi
+            [[ -f "$file" ]] || fallback "version file $file is missing"
+            if [[ "$(basename "$file")" == .tool-versions ]]; then
+              version="$(sed -nE 's/^golangci-lint[[:space:]]+([^#[:space:]]+).*/\1/p' "$file" | head -n 1)"
+            else
+              version="$(tr -d '[:space:]' < "$file")"
+            fi
+            version="v${version#v}"
+          fi
+          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fallback "golangci-lint version '$version' is not exact"
+
+          case "$(uname -s)/$(uname -m)" in
+            Linux/x86_64) platform=linux-amd64 ;;
+            Linux/aarch64 | Linux/arm64) platform=linux-arm64 ;;
+            Darwin/x86_64) platform=darwin-amd64 ;;
+            Darwin/arm64) platform=darwin-arm64 ;;
+            *) fallback "no golangci-lint build for $(uname -s)/$(uname -m)" ;;
+          esac
+
+          # fetch URL OUT: the token goes only to github.com (curl drops a
+          # custom Authorization header on the redirect to the asset CDN). A
+          # refused token falls back to one anonymous attempt.
+          fetch() {
+            local opts=(-fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 20 --max-time 300 -o "$2")
+            curl "${opts[@]}" -H "Authorization: Bearer ${GITHUB_TOKEN}" "$1" \
+              || curl "${opts[@]}" "$1"
+          }
+
+          bin="$TOOL_CACHE/golangci-lint/$version/$platform"
+          if [[ ! -x "$bin/golangci-lint" ]]; then
+            name="golangci-lint-${version#v}-$platform"
+            url="https://github.com/golangci/golangci-lint/releases/download/$version"
+            mkdir -p "$(dirname "$bin")"
+            # Same filesystem as $bin, so the final mv is an atomic rename.
+            tmp="$(mktemp -d "$(dirname "$bin")/.download.XXXXXX")"
+            trap 'rm -rf "$tmp"' EXIT
+            echo "Downloading golangci-lint $version ($platform)"
+            fetch "$url/$name.tar.gz" "$tmp/$name.tar.gz"
+            fetch "$url/golangci-lint-${version#v}-checksums.txt" "$tmp/checksums.txt"
+            grep "  $name.tar.gz\$" "$tmp/checksums.txt" > "$tmp/expected" \
+              || { echo "::error::$name.tar.gz is not in the release checksums."; exit 1; }
+            if command -v sha256sum > /dev/null 2>&1; then
+              (cd "$tmp" && sha256sum -c expected)
+            else
+              (cd "$tmp" && shasum -a 256 -c expected)
+            fi
+            tar -xzf "$tmp/$name.tar.gz" -C "$tmp" "$name/golangci-lint"
+            mkdir -p "$bin"
+            mv -f "$tmp/$name/golangci-lint" "$bin/golangci-lint"
+          fi
+          echo "$bin" >> "$GITHUB_PATH"
+          "$bin/golangci-lint" version
+          echo "installed=true" >> "$GITHUB_OUTPUT"
 
       # --allow-parallel-runners: golangci-lint takes a lock at
       # `os.TempDir()/golangci-lint.lock` and exits 3 with "parallel
@@ -207,6 +314,10 @@ jobs:
           GOMEMLIMIT: ${{ runner.environment != 'github-hosted' && inputs.lint_go_memory_limit || '' }}
           GOTMPDIR: ${{ runner.environment != 'github-hosted' && runner.temp || '' }}
         with:
+          # The pinned default appears twice: here and in Install golangci-lint.
+          # Bump both together. Both inputs only matter when that step left
+          # installed=false; install-mode none runs the binary on PATH.
+          install-mode: ${{ steps.golangci.outputs.installed == 'true' && 'none' || 'binary' }}
           version: ${{ inputs.lint_version_file == '' && 'v2.14.0' || '' }}
           version-file: ${{ inputs.lint_version_file }}
           working-directory: ${{ inputs.lint_working_directory }}
@@ -248,14 +359,42 @@ jobs:
           cache: ${{ runner.environment == 'github-hosted' }}
           cache-dependency-path: ${{ inputs.cache_dependency_path }}
 
+      # Retried for the same reason as in the lint job.
       - name: Download dependencies first
+        shell: bash
+        env:
+          DIR: ${{ inputs.download_dependencies_dir }}
         run: |
-          cd "${{ inputs.download_dependencies_dir }}"
-          go mod download
+          set -euo pipefail
+          export GOPROXY="${GOPROXY:-https://proxy.golang.org,direct}"
+          cd "$DIR"
+          delay=5
+          for attempt in 1 2 3 4 5; do
+            go mod download && exit 0
+            [[ "$attempt" == 5 ]] && break
+            echo "::warning::go mod download failed (attempt $attempt of 5); retrying in ${delay}s."
+            sleep "$delay"
+            delay=$((delay * 2))
+          done
+          echo "::error::go mod download failed after 5 attempts."
+          exit 1
 
       - name: Install gotestsum
+        shell: bash
         run: |
-          go install gotest.tools/gotestsum@v1.13.0
+          set -euo pipefail
+          export GOPROXY="${GOPROXY:-https://proxy.golang.org,direct}"
+          delay=5
+          for attempt in 1 2 3 4 5; do
+            go install gotest.tools/gotestsum@v1.13.0 && break
+            if [[ "$attempt" == 5 ]]; then
+              echo "::error::go install gotestsum failed after 5 attempts."
+              exit 1
+            fi
+            echo "::warning::go install gotestsum failed (attempt $attempt of 5); retrying in ${delay}s."
+            sleep "$delay"
+            delay=$((delay * 2))
+          done
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           # Test suites run via `bash -lc`, a login shell that re-initializes PATH
           # from the system profile and drops the $GITHUB_PATH addition above.

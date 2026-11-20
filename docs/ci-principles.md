@@ -27,7 +27,8 @@ A check's result depends only on the commit.
 | Rule | Incident |
 |---|---|
 | Pin service images by digest, and bump the pin in a pull request | echopoint ran `anchor:latest`. An Anchor merge broke 11 echopoint runs on 2026-11-10 that changed no echopoint code. Dagger also reused results cached against an older Anchor. Fixed: `cmd/it/anchorfixture/anchor-image.txt` plus `anchor-pin.yml`. |
-| Never download from github.com anonymously; send a token and retry | GitHub throttles anonymous release downloads during incidents: 7 failed deploy-gate attempts (echopoint-cli, 2026-11-09), a 504 on `apispec.wasm`, a 504 on squawk. ci-lint rule `anonymous-github-download`. |
+| Never download from github.com anonymously; send a token and retry | GitHub throttles anonymous release downloads during incidents: 7 failed deploy-gate attempts (echopoint-cli, 2026-11-09), a 504 on `apispec.wasm`, a 504 on squawk. ci-lint rule `anonymous-github-download`. On 2026-11-09 05–08 UTC 63 jobs failed on release-download 504s; the reusable workflows now install golangci-lint the same way. |
+| Retry downloads, never checks | proxy.golang.org stream resets (`INTERNAL_ERROR`) failed 7 jobs (2026-11-06..20); go does not retry a module fetch. Downloads run in their own retried step (`go mod download`, `go install`), and the lint or test runs once. The list is in [architecture](technical/architecture.md). |
 | No test against the shared dev environment in a pull request gate | Gate flows on dev fail on dev's own bugs, limits and locks (infra postmortems 2026-11-02, 11-03; skills postmortems). They stay as the post-deploy gate, not the PR gate. |
 
 ## 3. Self-hosted runners: no shared mutable cache owned by an action

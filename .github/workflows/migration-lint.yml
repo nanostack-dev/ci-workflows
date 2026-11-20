@@ -83,7 +83,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      # The whole history, so the merge base with the base ref exists.
+      # The whole history, so the merge base with the base ref exists. That
+      # covers every branch and tag, not every commit: the lint step fetches a
+      # base or head that no branch reaches any more.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
@@ -138,6 +140,22 @@ jobs:
           SQUAWK: ${{ steps.squawk.outputs.path }}
         run: |
           set -euo pipefail
+          # fetch-depth: 0 fetches branches and tags only. A commit no branch
+          # reaches is missing: the head of a pull request whose branch was
+          # deleted after the merge (ci-workflows run for #57), or the base of a
+          # stacked pull request whose base branch moved (anchor #337, #338).
+          # GitHub still serves such a commit by SHA. Fetch it without --depth,
+          # so its history arrives too and `base...head` finds the merge base.
+          # A commit that still cannot be fetched fails the lint as before.
+          for sha in "$BASE" "$HEAD"; do
+            [[ -z "$sha" || "$sha" =~ ^0+$ ]] && continue
+            git cat-file -e "$sha^{commit}" 2> /dev/null && continue
+            echo "Fetching $sha, which no fetched branch reaches."
+            for attempt in 1 2 3; do
+              git fetch --no-tags --quiet origin "$sha" && break
+              [[ "$attempt" == 3 ]] || sleep $((attempt * 5))
+            done
+          done
           args=(--migrations-dir "$MIGRATIONS_DIR" --squawk "$SQUAWK" --head "$HEAD")
           [[ -n "$BASE" ]] && args+=(--base "$BASE")
           [[ -n "$EXCLUDED_RULES" ]] && args+=(--exclude-rules "$EXCLUDED_RULES")
