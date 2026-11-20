@@ -23,3 +23,17 @@ workflow maps `tag` (`anchor`, `echopoint`, `atelier`) to the matching product
 workspace field from 1Password, falling back to `ECHOPOINT_CI_WORKSPACE_ID_<ENV>`.
 
 Callers that pin golangci-lint locally pass their committed version file through `go-build-test.yml`'s `lint_version_file` input. The lint action reads it relative to `lint_working_directory`, so local tooling and CI share one pin. An empty input preserves the workflow's pinned default for other callers; an invalid or missing requested file fails the lint action.
+
+The lint job installs golangci-lint itself before the action runs (step `Install golangci-lint`): the version from the same source the action uses, downloaded with the workflow token, retried, checked against the release's SHA-256 list and kept in the runner tool cache. The action then runs that binary with `install-mode: none`. A version the step cannot handle exactly (a go.mod that names golangci-lint, an inexact version such as `v2.3`, an unknown platform, a missing file) leaves the install to the action, as before. The pinned default `v2.14.0` appears in both steps; bump both together.
+
+Every tool or module download in these workflows retries transient failures, and nothing else is retried (see [CI principles](../ci-principles.md) section 2):
+
+| Download | Where | Retry |
+|---|---|---|
+| Go modules (`go mod download`) | `go-build-test.yml` lint and tests jobs, `workflow-lint.yml`, `ci.yml` | 5 attempts, 5/10/20/40 s apart |
+| `gotestsum`, `actionlint` (`go install`) | `go-build-test.yml` tests job, `workflow-lint.yml`, `ci.yml` | 5 attempts, 5/10/20/40 s apart; the lint itself runs once |
+| golangci-lint release | `go-build-test.yml` lint job | `curl --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 20`, token first, then anonymous |
+| squawk release | `scripts/migration-lint/install-squawk.sh` | 5 attempts with backoff, token first |
+| Dagger CLI | `actions/setup-dagger` | `curl --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 20` |
+
+`GOPROXY` keeps a value the runner sets and is otherwise Go's default, `https://proxy.golang.org,direct`. `GOFLAGS=-mod=mod` is deliberately not set: it lets a build rewrite `go.mod` and `go.sum` instead of failing on drift. The echopoint CLI (`nanostack-dev/echopoint-cli@v1`, used by `echopoint-test.yml`) retries its own downloads. `actions/setup-go`, `actions/setup-node`, pnpm and Playwright installs keep the retries those tools ship with.

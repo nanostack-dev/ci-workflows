@@ -6,6 +6,8 @@
 
 Only the `*.sql` files the change **adds or modifies** under `migrations_dir`: `git diff --diff-filter=ACMR <base>...<head>`. Migrations are append-only, so the history would only add noise. The base is `base_ref`, else the pull request's base commit (the previous push for a push event). A base that cannot be resolved **fails** the job with exit status 2: linting nothing would pass migrations nobody checked, the same fail-open rule as [detect-changes](../../.github/workflows/detect-changes.yml).
 
+The checkout fetches the whole history of every branch and tag (`fetch-depth: 0`), which is not every commit. Before it diffs, the job fetches a base or head commit that no branch reaches by its SHA, without `--depth`, so its history arrives and the merge base exists. Two cases needed it, 4 failed jobs from 2026-11-08 to 2026-11-19: the head of a pull request whose branch was deleted after the merge (ci-workflows #57), and the base of a stacked pull request whose base branch moved (anchor #337 and #338). A commit GitHub no longer serves still fails the job. A push that creates a branch reports an all-zero previous commit and fails the same way; the current callers run on `push` to `main` only, where that does not happen.
+
 `*.up.sql` files go through squawk and the custom checks; `*.down.sql` files go through the custom checks only. Down migrations are destructive by nature (`DROP TABLE`, `DROP COLUMN`) and run only on a rollback, so squawk's findings on them are noise.
 
 ## Calling it
