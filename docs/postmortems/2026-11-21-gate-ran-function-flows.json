@@ -5,30 +5,103 @@
   "date": "2026-11-21",
   "severity": "SEV4",
   "status": "in review",
-  "authors": ["Nanostack routine (echopoint-investigation)"],
+  "authors": [
+    "Nanostack routine (echopoint-investigation)"
+  ],
   "summary": "At 03:32Z two new function flows, `Throwaway organization` and `Delete throwaway organization`, were saved with the `echopoint` gate tag. The echopoint post-deploy gate of #938 (04:01Z) selected them, ran each alone with no inputs, and both failed `INPUT_REQUIRED`; the other 102 flows passed. The gate held prod echopoint on d0d34f35, so #938 (drops `flow_versions.published_at`) stayed on dev only. The gate never passed the Action's `ignore-modules`, which defaults to false, while monitors skip functions by default. ci-workflows now skips function flows by default, the local suite script does the same and warns on a tagged function, and the flow-suite skill says functions stay out of gate selections.",
   "impact": {
     "text": "Dev only. Prod echopoint promotion was held from 04:05Z; #938 stayed on dev. No customer impact: prod kept the previous build. Every later echopoint backend change would have stopped at dev the same way.",
     "numbers": [
-      {"value": "2 of 104", "label": "gate flows failed (both functions)"},
-      {"value": "0", "label": "product failures"}
+      {
+        "value": "2 of 104",
+        "label": "gate flows failed (both functions)"
+      },
+      {
+        "value": "0",
+        "label": "product failures"
+      }
     ]
   },
   "trigger": "The echopoint gate of Deploy Router run 44863900081 (#938) ran the two tagged function flows alone; each failed `INPUT_REQUIRED` in under 1 s.",
   "detection": "The gate's `alert-deploy-failure` job ran at 04:05Z, during the night. The echopoint-investigation routine found it at 06:12Z on its next 6-hourly run. Nothing ran the gate selection between the tag change (03:32Z) and the next deploy.",
-  "resolution": "ci-workflows `echopoint-test.yml` passes `ignore-modules: true` by default, so the next echopoint gate skips function flows. Prod receives #938 at the next green echopoint gate (next backend merge or a rerun by a human); the routine does not rerun gates.",
+  "resolution": "ci-workflows#60: `echopoint-test.yml` passes `ignore-modules: true` by default, so the next echopoint gate skips function flows. Prod receives #938 at the next green echopoint gate (next backend merge or a rerun by a human); the routine does not rerun gates.",
   "timeline": {
     "events": [
-      {"t": "2026-11-21T03:32:15Z", "kind": "change", "label": "Function `Delete throwaway organization` saved, tag echopoint", "detail": "Flow `e3a0993a`, role `function`, an `input` node requiring `orgId`.", "link": "https://api.echopoint.dev/flows/e3a0993a-a1ff-430e-af8a-215bd3a6748d"},
-      {"t": "2026-11-21T03:32:38Z", "kind": "change", "label": "Function `Throwaway organization` saved, tag echopoint", "detail": "Flow `765223ce`, role `function`, input `name` required. Caller `Organization analytics windows and bounds` (`c62760dd`) switched to both at 03:38Z.", "link": "https://api.echopoint.dev/flows/765223ce-15f0-422f-83b9-a6e51ff6bb4f"},
-      {"t": "2026-11-21T03:54:47Z", "kind": "change", "label": "echopoint#938 merged (drop published_at)", "link": "https://github.com/nanostack-dev/echopoint/pull/938"},
-      {"t": "2026-11-21T04:00:12Z", "kind": "change", "label": "Deploy Router run 44863900081 starts", "link": "https://github.com/nanostack-dev/infra/actions/runs/44863900081"},
-      {"t": "2026-11-21T04:01:18Z", "kind": "note", "label": "Runner: INPUT_REQUIRED input \"name\", then \"orgId\"", "link": "https://github.com/nanostack-dev/infra/actions/runs/44863900081/job/136723437774"},
-      {"t": "2026-11-21T04:04:58Z", "kind": "trigger", "label": "Gate verdict red: 102 passed, 2 functions failed", "detail": "`Flows failed on more than a transport error: 765223ce… e3a0993a…`. `deploy-echopoint-prod` skipped.", "link": "https://github.com/nanostack-dev/infra/actions/runs/44863900081/job/136723437774"},
-      {"t": "2026-11-21T04:05:03Z", "kind": "detect", "label": "alert-deploy-failure job runs", "link": "https://github.com/nanostack-dev/infra/actions/runs/44863900081"},
-      {"t": "2026-11-21T06:12:00Z", "approx": true, "kind": "escalate", "label": "Routine reads the gate log, finds role function"},
-      {"t": "2026-11-21T06:45:00Z", "approx": true, "kind": "mitigate", "label": "ci-workflows gate skips function flows by default"},
-      {"t": "2026-11-21T06:45:00Z", "approx": true, "kind": "resolve", "label": "Next echopoint gate can pass; prod waits for it"}
+      {
+        "t": "2026-11-21T03:32:15Z",
+        "kind": "change",
+        "label": "Function `Delete throwaway organization` saved, tag echopoint",
+        "detail": "Flow `e3a0993a`, role `function`, an `input` node requiring `orgId`.",
+        "link": "https://api.echopoint.dev/flows/e3a0993a-a1ff-430e-af8a-215bd3a6748d"
+      },
+      {
+        "t": "2026-11-21T03:32:38Z",
+        "kind": "change",
+        "label": "Function `Throwaway organization` saved, tag echopoint",
+        "detail": "Flow `765223ce`, role `function`, input `name` required. Caller `Organization analytics windows and bounds` (`c62760dd`) switched to both at 03:38Z.",
+        "link": "https://api.echopoint.dev/flows/765223ce-15f0-422f-83b9-a6e51ff6bb4f"
+      },
+      {
+        "t": "2026-11-21T03:54:47Z",
+        "kind": "change",
+        "label": "echopoint#938 merged (drop published_at)",
+        "link": "https://github.com/nanostack-dev/echopoint/pull/938"
+      },
+      {
+        "t": "2026-11-21T04:00:12Z",
+        "kind": "change",
+        "label": "Deploy Router run 44863900081 starts",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/44863900081"
+      },
+      {
+        "t": "2026-11-21T04:01:18Z",
+        "kind": "note",
+        "label": "Runner: INPUT_REQUIRED input \"name\", then \"orgId\"",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/44863900081/job/136723437774"
+      },
+      {
+        "t": "2026-11-21T04:04:58Z",
+        "kind": "trigger",
+        "label": "Gate verdict red: 102 passed, 2 functions failed",
+        "detail": "`Flows failed on more than a transport error: 765223ce… e3a0993a…`. `deploy-echopoint-prod` skipped.",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/44863900081/job/136723437774"
+      },
+      {
+        "t": "2026-11-21T04:05:03Z",
+        "kind": "detect",
+        "label": "alert-deploy-failure job runs",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/44863900081"
+      },
+      {
+        "t": "2026-11-21T06:10:30Z",
+        "approx": true,
+        "kind": "escalate",
+        "label": "Routine reads the gate log, finds role function"
+      },
+      {
+        "t": "2026-11-21T06:13:49Z",
+        "kind": "mitigate",
+        "label": "ci-workflows gate skips function flows by default",
+        "link": "https://github.com/nanostack-dev/ci-workflows/pull/60"
+      },
+      {
+        "t": "2026-11-21T06:13:49Z",
+        "kind": "resolve",
+        "label": "Next echopoint gate can pass; prod waits for it",
+        "link": "https://github.com/nanostack-dev/ci-workflows/pull/60"
+      },
+      {
+        "t": "2026-11-21T06:14:31Z",
+        "kind": "followup",
+        "label": "Gate tag removed from both functions"
+      },
+      {
+        "t": "2026-11-21T06:20:00Z",
+        "approx": true,
+        "kind": "followup",
+        "label": "skills#76: functions stay out of the gate selection",
+        "link": "https://github.com/nanostack-dev/skills/pull/76"
+      }
     ]
   },
   "whys": {
@@ -50,7 +123,11 @@
                     "text": "echopoint-test.yml never set the Action's ignore-modules, whose default is false",
                     "evidence": "ci-workflows `echopoint-test.yml` at main: no `ignore-modules`; echopoint-cli `flow_run.go` flag default false",
                     "because": [
-                      {"id": "R1", "root": true, "text": "Gate selection differs from monitor selection: monitors skip functions by default, the gate had no such default"}
+                      {
+                        "id": "R1",
+                        "root": true,
+                        "text": "Gate selection differs from monitor selection: monitors skip functions by default, the gate had no such default"
+                      }
                     ]
                   }
                 ]
@@ -65,7 +142,11 @@
                 "text": "Suite guidance says to tag each new flow with its product and says nothing about functions",
                 "evidence": "skills `flow-suite-testing/SKILL.md` step 8 (\"Connect the gate\"); routine step 4 \"tag it with its product\"",
                 "because": [
-                  {"id": "R2", "root": true, "text": "No rule or check keeps reusable function flows out of a gate selection tag"}
+                  {
+                    "id": "R2",
+                    "root": true,
+                    "text": "No rule or check keeps reusable function flows out of a gate selection tag"
+                  }
                 ]
               }
             ]
@@ -81,14 +162,22 @@
             "text": "Nothing runs the gate selection when a flow's tags change",
             "evidence": "Gate runs only from Deploy Router; run_suites.sh runs every 6 h; same gap as the 2026-11-21 role-rename postmortem A7",
             "because": [
-              {"id": "R3", "root": true, "text": "A tag edit is a gate change with no check of its own before the next deploy"}
+              {
+                "id": "R3",
+                "root": true,
+                "text": "A tag edit is a gate change with no check of its own before the next deploy"
+              }
             ]
           },
           {
             "text": "A red gate holds prod until the next merge or a human rerun",
             "evidence": "Routine rule: it does not rerun a failed gate job (a rerun promotes to prod)",
             "because": [
-              {"id": "R4", "root": true, "text": "No owner reruns a gate whose failure was fixed outside the product (config or flow)"}
+              {
+                "id": "R4",
+                "root": true,
+                "text": "No owner reruns a gate whose failure was fixed outside the product (config or flow)"
+              }
             ]
           }
         ]
@@ -114,19 +203,93 @@
     ]
   },
   "actions": [
-    {"id": "A1", "what": "echopoint-test.yml input `ignore_modules`, default true, passed to the Action (gate skips function flows)", "type": "prevent", "owner": "Nanostack routine (echopoint-investigation)", "due": "2026-11-21", "status": "done", "fixes": ["R1"]},
-    {"id": "A2", "what": "run_suites.sh passes `--ignore-modules` and prints `FUNCTION-IN-TAG <tag> <flow>` for a tagged function", "type": "detect", "owner": "Nanostack routine (echopoint-investigation)", "due": "2026-11-21", "status": "done", "fixes": ["R1", "R2"]},
-    {"id": "A3", "what": "flow-suite-testing skill: a reusable function stays out of the gate selection; the selection skips functions", "type": "process", "owner": "Nanostack routine (echopoint-investigation)", "due": "2026-11-21", "status": "done", "fixes": ["R2"]},
-    {"id": "A4", "what": "Run the gate tag when a flow in it is saved with a new tag or role (pre-deploy selection check)", "type": "detect", "owner": "infra maintainers", "due": "2026-12-05", "status": "open", "fixes": ["R3"]},
-    {"id": "A5", "what": "Name an owner who reruns a gate whose failure was fixed outside the product", "type": "process", "owner": "infra maintainers", "due": "2026-11-28", "status": "open", "fixes": ["R4"]}
+    {
+      "id": "A1",
+      "what": "echopoint-test.yml input `ignore_modules`, default true, passed to the Action (gate skips function flows)",
+      "type": "prevent",
+      "owner": "Nanostack routine (echopoint-investigation)",
+      "due": "2026-11-21",
+      "status": "done",
+      "fixes": [
+        "R1"
+      ],
+      "ticket": {
+        "label": "ci-workflows#60",
+        "url": "https://github.com/nanostack-dev/ci-workflows/pull/60"
+      }
+    },
+    {
+      "id": "A2",
+      "what": "run_suites.sh passes `--ignore-modules` and prints `FUNCTION-IN-TAG <tag> <flow>` for a tagged function",
+      "type": "detect",
+      "owner": "Nanostack routine (echopoint-investigation)",
+      "due": "2026-11-21",
+      "status": "done",
+      "fixes": [
+        "R1",
+        "R2"
+      ]
+    },
+    {
+      "id": "A3",
+      "what": "flow-suite-testing skill: a reusable function stays out of the gate selection; the selection skips functions",
+      "type": "process",
+      "owner": "Nanostack routine (echopoint-investigation)",
+      "due": "2026-11-21",
+      "status": "done",
+      "fixes": [
+        "R2"
+      ],
+      "ticket": {
+        "label": "skills#76",
+        "url": "https://github.com/nanostack-dev/skills/pull/76"
+      }
+    },
+    {
+      "id": "A4",
+      "what": "Run the gate tag when a flow in it is saved with a new tag or role (pre-deploy selection check)",
+      "type": "detect",
+      "owner": "infra maintainers",
+      "due": "2026-12-05",
+      "status": "open",
+      "fixes": [
+        "R3"
+      ]
+    },
+    {
+      "id": "A5",
+      "what": "Name an owner who reruns a gate whose failure was fixed outside the product",
+      "type": "process",
+      "owner": "infra maintainers",
+      "due": "2026-11-28",
+      "status": "open",
+      "fixes": [
+        "R4"
+      ]
+    }
   ],
-  "responders": [{"role": "Investigation", "name": "Nanostack routine (echopoint-investigation)"}],
+  "responders": [
+    {
+      "role": "Investigation",
+      "name": "Nanostack routine (echopoint-investigation)"
+    }
+  ],
   "messaging": {
     "internal": "Echopoint gate of #938 red on two function flows tagged echopoint (no inputs); prod held on d0d34f35. Gate now skips function flows by default; prod gets #938 at the next green echopoint gate.",
     "external": "None: dev and CI only."
   },
   "links": [
-    {"label": "Gate run 44863900081", "url": "https://github.com/nanostack-dev/infra/actions/runs/44863900081"},
-    {"label": "echopoint#938", "url": "https://github.com/nanostack-dev/echopoint/pull/938"}
+    {
+      "label": "Gate run 44863900081",
+      "url": "https://github.com/nanostack-dev/infra/actions/runs/44863900081"
+    },
+    {
+      "label": "echopoint#938",
+      "url": "https://github.com/nanostack-dev/echopoint/pull/938"
+    },
+    {
+      "label": "Atelier",
+      "url": "http://nanostack-dev-1340p:4320/postmortems/01a1fcbf-699c-71e4-b948-be01b264d7a9"
+    }
   ]
 }

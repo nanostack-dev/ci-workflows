@@ -7,9 +7,9 @@
 | **Status** | In review |
 | **Service** | ci-workflows echopoint-test.yml (echopoint post-deploy gate) |
 | **Authors** | Nanostack routine (echopoint-investigation) |
-| **Duration** | ~2h 40m (trigger to resolution) |
+| **Duration** | 2h 08m (trigger to resolution) |
 | **Time to detect** | 5s |
-| **Time to mitigate** | ~2h 40m |
+| **Time to mitigate** | 2h 08m |
 
 > Blameless: this document names systems, processes and missing guards, not people.
 
@@ -34,7 +34,7 @@ The gate's `alert-deploy-failure` job ran at 04:05Z, during the night. The echop
 
 ## Resolution
 
-ci-workflows `echopoint-test.yml` passes `ignore-modules: true` by default, so the next echopoint gate skips function flows. Prod receives #938 at the next green echopoint gate (next backend merge or a rerun by a human); the routine does not rerun gates.
+ci-workflows#60: `echopoint-test.yml` passes `ignore-modules: true` by default, so the next echopoint gate skips function flows. Prod receives #938 at the next green echopoint gate (next backend merge or a rerun by a human); the routine does not rerun gates.
 
 ## Timeline (UTC)
 
@@ -47,9 +47,11 @@ ci-workflows `echopoint-test.yml` passes `ignore-modules: true` by default, so t
 | 04:01:18 | T−3m 40s | **Runner: INPUT_REQUIRED input "name", then "orgId"** ([link](https://github.com/nanostack-dev/infra/actions/runs/44863900081/job/136723437774)) |
 | 04:04:58 | T+0s | **Gate verdict red: 102 passed, 2 functions failed** `Flows failed on more than a transport error: 765223ce… e3a0993a…`. `deploy-echopoint-prod` skipped. ([link](https://github.com/nanostack-dev/infra/actions/runs/44863900081/job/136723437774)) |
 | 04:05:03 | T+5s | **alert-deploy-failure job runs** ([link](https://github.com/nanostack-dev/infra/actions/runs/44863900081)) |
-| ~06:12 | T+2h 07m | **Routine reads the gate log, finds role function** |
-| ~06:45 | T+2h 40m | **ci-workflows gate skips function flows by default** |
-| ~06:45 | T+2h 40m | **Next echopoint gate can pass; prod waits for it** |
+| ~06:10 | T+2h 05m | **Routine reads the gate log, finds role function** |
+| 06:13:49 | T+2h 08m | **ci-workflows gate skips function flows by default** ([link](https://github.com/nanostack-dev/ci-workflows/pull/60)) |
+| 06:13:49 | T+2h 08m | **Next echopoint gate can pass; prod waits for it** ([link](https://github.com/nanostack-dev/ci-workflows/pull/60)) |
+| 06:14:31 | T+2h 09m | **Gate tag removed from both functions** |
+| ~06:20 | T+2h 15m | **skills#76: functions stay out of the gate selection** ([link](https://github.com/nanostack-dev/skills/pull/76)) |
 
 ## Root cause analysis: the five whys
 
@@ -139,9 +141,9 @@ flowchart TD
 
 | ID | Action | Type | Owner | Due | Status | Ticket | Fixes |
 |---|---|---|---|---|---|---|---|
-| A1 | echopoint-test.yml input `ignore_modules`, default true, passed to the Action (gate skips function flows) | prevent | Nanostack routine (echopoint-investigation) | 2026-11-21 | done |  | R1 |
+| A1 | echopoint-test.yml input `ignore_modules`, default true, passed to the Action (gate skips function flows) | prevent | Nanostack routine (echopoint-investigation) | 2026-11-21 | done | [ci-workflows#60](https://github.com/nanostack-dev/ci-workflows/pull/60) | R1 |
 | A2 | run_suites.sh passes `--ignore-modules` and prints `FUNCTION-IN-TAG <tag> <flow>` for a tagged function | detect | Nanostack routine (echopoint-investigation) | 2026-11-21 | done |  | R1, R2 |
-| A3 | flow-suite-testing skill: a reusable function stays out of the gate selection; the selection skips functions | process | Nanostack routine (echopoint-investigation) | 2026-11-21 | done |  | R2 |
+| A3 | flow-suite-testing skill: a reusable function stays out of the gate selection; the selection skips functions | process | Nanostack routine (echopoint-investigation) | 2026-11-21 | done | [skills#76](https://github.com/nanostack-dev/skills/pull/76) | R2 |
 | A4 | Run the gate tag when a flow in it is saved with a new tag or role (pre-deploy selection check) | detect | infra maintainers | 2026-12-05 | open |  | R3 |
 | A5 | Name an owner who reruns a gate whose failure was fixed outside the product | process | infra maintainers | 2026-11-28 | open |  | R4 |
 
@@ -163,3 +165,4 @@ None: dev and CI only.
 
 - [Gate run 44863900081](https://github.com/nanostack-dev/infra/actions/runs/44863900081)
 - [echopoint#938](https://github.com/nanostack-dev/echopoint/pull/938)
+- [Atelier](http://nanostack-dev-1340p:4320/postmortems/01a1fcbf-699c-71e4-b948-be01b264d7a9)
