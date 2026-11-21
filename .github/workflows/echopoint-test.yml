@@ -151,6 +151,11 @@ jobs:
           # Keep in step with run_suites.sh in the echopoint-investigation routine:
           # it checks every sample below against this regex before each run.
           transport='Could not connect to|Connection refused by|TLS handshake|Could not resolve host|Request to [^ ]+ timed out|connection reset by peer|(dial|read|write) tcp [^ ]+: i/o timeout'
+          # A request net/http refused before dialing (a quoted header name, a URL
+          # without a scheme) also read "Could not connect to" until runner
+          # INVALID_REQUEST: a rerun fails the same way, so it is never transport.
+          # Postmortem: infra docs/postmortems/2026-11-21-gate-flows-pinned-role-rename.md
+          refused='invalid header field|invalid trailer|unsupported protocol scheme|no Host in request URL|was not sent: it is invalid'
           # Known transport messages seen on gates and suites. A regex edit that
           # stops matching one fails here instead of holding prod on a reset.
           # Postmortem: docs/postmortems/2026-11-13-gate-sse-reset-not-transport.md
@@ -174,17 +179,28 @@ jobs:
           claim ephemeral Job: Post "https://api.echopoint.dev/runner/ephemeral/executions/01a1f1b7-99e7-71a8-acd0-f13a3decec2d/claim": read tcp 192.168.2.18:48938->172.64.80.1:443: read: connection reset by peer; inspect execution 01a1f1b7-99e7-71a8-acd0-f13a3decec2d before retrying
           launch flow: Post "https://api.echopoint.dev/flows/x/launch": read tcp 192.168.2.18:48938->172.64.80.1:443: i/o timeout
           SAMPLES
+          while IFS= read -r sample; do
+            [ -z "$sample" ] && continue
+            if jq -en --arg re "$transport" --arg no "$refused" --arg s "$sample" '$s | test($re) and (test($no) | not)' >/dev/null; then
+              echo "::error::A refused request is classed as transport: $sample"
+              exit 1
+            fi
+          done <<'NOT_TRANSPORT'
+          Could not connect to apidev.echopoint.dev: net/http: invalid header field name "\"X-Api-Key\""
+          Could not connect to : unsupported protocol scheme ""
+          Request to apidev.echopoint.dev was not sent: it is invalid (check header names, header values and the URL scheme): net/http: invalid header field name "\"X-Api-Key\""
+          NOT_TRANSPORT
           if [ ! -s "${RESULTS_FILE:-}" ]; then
             echo "::error::No flow results: the suite failed before running a flow."
             exit 1
           fi
           failed=$(jq -r '.results[]? | select(.success | not) | .flow_id' "$RESULTS_FILE")
-          other=$(jq -r --arg re "$transport" '.results[]? | select(.success | not)
-            | select((.error_message // "") | test($re) | not) | .flow_id' "$RESULTS_FILE")
+          other=$(jq -r --arg re "$transport" --arg no "$refused" '.results[]? | select(.success | not)
+            | select((.error_message // "") | (test($re) and (test($no) | not)) | not) | .flow_id' "$RESULTS_FILE")
           # Report leaks of every transport-failed flow before the verdict: a gate that
           # fails on another flow still leaves these resources behind.
-          tfailed=$(jq -r --arg re "$transport" '.results[]? | select(.success | not)
-            | select((.error_message // "") | test($re)) | .flow_id' "$RESULTS_FILE")
+          tfailed=$(jq -r --arg re "$transport" --arg no "$refused" '.results[]? | select(.success | not)
+            | select((.error_message // "") | test($re) and (test($no) | not)) | .flow_id' "$RESULTS_FILE")
           for flow in $tfailed; do
             echopoint flows get "$flow" -o json \
               | jq -r '.flow_definition.nodes[] | select(.run_when == "always" and .type == "request") | .id' \
