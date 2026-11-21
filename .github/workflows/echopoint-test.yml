@@ -41,6 +41,15 @@ on:
         required: false
         default: '200'
         type: string
+      ignore_modules:
+        description: >-
+          Skip function flows (role `function`) that the tag matches. A function
+          needs its caller's inputs, so run alone it fails with INPUT_REQUIRED
+          (2026-11-21: two tagged functions turned the echopoint gate red and
+          held prod). Monitors skip them by default too.
+        required: false
+        default: 'true'
+        type: string
       poll_timeout:
         description: Max seconds to wait for each flow.
         required: false
@@ -126,6 +135,7 @@ jobs:
           environment: ${{ inputs.environment }}
           parallel: ${{ inputs.parallel }}
           max-flows: ${{ inputs.max_flows }}
+          ignore-modules: ${{ inputs.ignore_modules }}
           poll-timeout: ${{ inputs.poll_timeout }}
           cli-version: ${{ inputs.cli_version }}
 
