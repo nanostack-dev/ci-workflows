@@ -1,0 +1,96 @@
+name: Last Success SHA
+
+# Finds the commit of the newest successful push run of the calling workflow on
+# the default branch, so detect-changes can diff a push against the last commit
+# that CI verified and deployed instead of against the previous push.
+#
+# Diffing per push loses a change whose run failed: the next push sees only its
+# own files. On 2026-11-25 echopoint #1006 (backend) failed main CI on frontend
+# flakes; the next three pushes were frontend-only, so the backend never built
+# while the frontend shipped to prod against the old API
+# (docs/postmortems/2026-11-25-per-push-diff-stranded-backend.md).
+#
+# Separate from detect-changes on purpose: reading workflow runs of a private
+# repository needs `actions: read`, and a called workflow that asks for more
+# than its caller grants fails at startup. Callers opt in by calling this with
+# `actions: read` and passing `sha` to detect-changes as `base_sha`.
+#
+# Never fails: an API error, a non-push event or no successful run gives an
+# empty `sha`, and detect-changes falls back to `github.event.before`. A failed
+# job here would skip a detect job that `needs` it without `!cancelled()`.
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: Runner label
+        required: false
+        default: ubuntu-latest
+        type: string
+    outputs:
+      sha:
+        description: >-
+          head_sha of the newest successful push run of the calling workflow on
+          the default branch; empty when not a push to the default branch or
+          when the lookup fails.
+        value: ${{ jobs.find.outputs.sha }}
+      run_id:
+        description: The id of that run, empty with `sha`.
+        value: ${{ jobs.find.outputs.run_id }}
+
+# GITHUB_TOKEN starts with nothing; every job grants what it needs.
+permissions: {}
+
+jobs:
+  find:
+    name: Find the last successful run
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      sha: ${{ steps.find.outputs.sha }}
+      run_id: ${{ steps.find.outputs.run_id }}
+    steps:
+      - name: Query the newest successful run
+        id: find
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          REPOSITORY: ${{ github.repository }}
+          # In a called workflow the github context is the caller's, so this is
+          # the calling workflow: owner/repo/.github/workflows/go.yml@refs/heads/main.
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -uo pipefail
+          sha='' run_id=''
+          finish() {
+            echo "sha=$sha" >> "$GITHUB_OUTPUT"
+            echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          if [[ "$EVENT_NAME" != 'push' || -z "$DEFAULT_BRANCH" || "$REF_NAME" != "$DEFAULT_BRANCH" ]]; then
+            echo "Not a push to the default branch: no last successful run needed."
+            finish
+          fi
+          workflow="${WORKFLOW_REF%%@*}"
+          workflow="${workflow##*/}"
+          url="https://api.github.com/repos/${REPOSITORY}/actions/workflows/${workflow}/runs?branch=${DEFAULT_BRANCH}&event=push&status=success&per_page=1&exclude_pull_requests=true"
+          if ! body="$(curl -fsS --retry 3 --retry-all-errors --max-time 20 \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H 'Accept: application/vnd.github+json' "$url")"; then
+            echo "::warning::Cannot list the successful runs of ${workflow} (does the caller grant actions: read?). detect-changes diffs against the previous push."
+            finish
+          fi
+          sha="$(jq -r '.workflow_runs[0].head_sha // empty' <<< "$body" 2>/dev/null || true)"
+          run_id="$(jq -r '.workflow_runs[0].id // empty' <<< "$body" 2>/dev/null || true)"
+          if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "No successful push run of ${workflow} on ${DEFAULT_BRANCH}: detect-changes diffs against the previous push."
+            sha='' run_id=''
+            finish
+          fi
+          echo "Last successful run of ${workflow} on ${DEFAULT_BRANCH}: run ${run_id} at ${sha}."
+          finish

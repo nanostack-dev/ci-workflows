@@ -6,7 +6,7 @@ Read [CONTEXT.md](CONTEXT.md) and [docs/README.md](docs/README.md). Before chang
 
 - Keep deploy execution, preview resources and environment-specific secret orchestration in the caller/control-plane repository. This repository accepts explicit inputs and secrets.
 - Preserve reusable input/output contracts and public-safe defaults. A caller can be independently cloned; workflow reuse is a declared GitHub dependency, not a sibling filesystem requirement.
-- Treat change-detection outputs as verification gates. An unresolved comparison must require verification, not silently skip it.
+- Treat change-detection outputs as verification and deploy gates: a push diffs from the last green commit (`last-success-sha.yml` into detect-changes' `base_sha`), and an unresolved comparison verifies every surface ([postmortem](docs/postmortems/2026-11-25-per-push-diff-stranded-backend.md)).
 - Self-hosted runner diagnosis starts at [runner flakes](docs/self-hosted-runner-flakes.md).
 - Read the caller's exact workflow/ref when assessing behavior; changes used at `@main` can affect consumers immediately.
 
