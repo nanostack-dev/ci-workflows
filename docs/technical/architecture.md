@@ -16,23 +16,25 @@ A caller's `jobs.<name>.uses` binds a GitHub repository/ref; `with`, explicit se
 
 A push run must cover every change since the last commit CI verified, not only its own push. A red run deploys nothing, so diffing the next push against `github.event.before` drops the red push's files: on 2026-11-25 echopoint #1006's backend never built because the three pushes after its red run were frontend-only, and the frontend-only deploy path shipped the new frontend to prod against the old API ([postmortem](../postmortems/2026-11-25-per-push-diff-stranded-backend.md)).
 
-Callers opt in with two jobs:
+Callers opt in with two jobs and a `ci-ok` check:
 
 ```yaml
-last_success:
-  if: github.event_name == 'push'
+last_success:            # no `if:`: it answers empty off the default branch
   uses: nanostack-dev/ci-workflows/.github/workflows/last-success-sha.yml@main
   permissions:
     actions: read
 detect_changes:
   needs: last_success
-  if: ${{ !cancelled() }}   # last_success is skipped on pull requests
+  if: ${{ !cancelled() }}  # a failed lookup still runs detection
   uses: nanostack-dev/ci-workflows/.github/workflows/detect-changes.yml@main
   permissions:
     contents: read
   with:
     base_sha: ${{ needs.last_success.outputs.sha }}
+# ci-ok: add last_success to `needs` and require its result to be success.
 ```
+
+Run the lookup on every event. GitHub skips every job downstream of a skipped job, transitively, unless that job has its own `always()` or `!cancelled()`. With `if: github.event_name == 'push'` on the lookup, echopoint's pull requests skipped `migrations-verify`, `migration-lint` and `preview-flag`, and `ci-ok`, which counts skipped as passed, would have stayed green ([run 45675137946](https://github.com/nanostack-dev/echopoint/actions/runs/45675137946)). For the same reason `ci-ok` requires the lookup to succeed: a failed lookup would skip the jobs gated on `detect_changes`.
 
 The lookup is a separate workflow because a called workflow cannot ask for more than its caller grants: if `detect-changes.yml` itself asked for `actions: read`, every caller that grants only `contents: read` would fail at startup. A caller that does not opt in keeps the per-push diff. The detect log names the base it used (`Base: the last successful run's commit …` or `Base: the previous push …`). Once a run with the widened diff succeeds, its commit is the next base, so a green run always covers the red runs before it. The base stops at a run that succeeded under the old per-push diff, so the first push after opting in can still miss earlier stranded changes; check `/health` against `main` after opting in.
 

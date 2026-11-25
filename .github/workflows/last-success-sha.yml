@@ -16,8 +16,10 @@ name: Last Success SHA
 # `actions: read` and passing `sha` to detect-changes as `base_sha`.
 #
 # Never fails: an API error, a non-push event or no successful run gives an
-# empty `sha`, and detect-changes falls back to `github.event.before`. A failed
-# job here would skip a detect job that `needs` it without `!cancelled()`.
+# empty `sha`, and detect-changes falls back to `github.event.before`. Call it
+# on every event, with no `if:`, and make ci-ok require its success: GitHub
+# skips every job downstream of a skipped or failed job, transitively, and
+# ci-ok counts skipped as passed (docs/technical/architecture.md).
 
 on:
   workflow_call:
