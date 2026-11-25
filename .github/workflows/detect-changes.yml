@@ -29,6 +29,14 @@ on:
         required: false
         default: ubuntu-latest
         type: string
+      base_sha:
+        description: >-
+          On a push, the commit to diff against instead of the previous push:
+          pass the `sha` output of last-success-sha.yml. Used only when it is an
+          ancestor of the pushed commit; otherwise the previous push is the base.
+        required: false
+        default: ''
+        type: string
     outputs:
       backend_changed:
         description: '"true" when a changed file matched backend_patterns'
@@ -61,6 +69,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          LAST_SUCCESS_SHA: ${{ inputs.base_sha }}
           HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           BACKEND_PATTERNS: ${{ inputs.backend_patterns }}
           FRONTEND_PATTERNS: ${{ inputs.frontend_patterns }}
@@ -86,6 +95,26 @@ jobs:
             [[ -z "$sha" || "$sha" =~ ^0+$ ]] && continue
             have "$sha" || git fetch --no-tags origin "$sha" >/dev/null 2>&1 || true
           done
+
+          # On a push, diff against the last commit CI verified when the caller
+          # passed one (last-success-sha.yml). The previous push is the wrong base
+          # after a red run: its changes never deployed, and a next push that
+          # sees only its own files skips their deploy. On 2026-11-25 three
+          # frontend-only pushes after a red #1006 shipped the echopoint frontend
+          # to prod against an API that never got #1006's backend
+          # (docs/postmortems/2026-11-25-per-push-diff-stranded-backend.md).
+          if [[ "$EVENT_NAME" == 'push' && -n "$LAST_SUCCESS_SHA" ]]; then
+            have "$LAST_SUCCESS_SHA" || git fetch --no-tags origin "$LAST_SUCCESS_SHA" >/dev/null 2>&1 || true
+            if [[ "$LAST_SUCCESS_SHA" != "$HEAD_SHA" ]] && have "$LAST_SUCCESS_SHA" && have "$HEAD_SHA" \
+              && git merge-base --is-ancestor "$LAST_SUCCESS_SHA" "$HEAD_SHA"; then
+              echo "Base: the last successful run's commit $LAST_SUCCESS_SHA (previous push: ${BASE_SHA:-none})."
+              BASE_SHA="$LAST_SUCCESS_SHA"
+            else
+              echo "Base: the previous push ${BASE_SHA:-none}; $LAST_SUCCESS_SHA is not an earlier commit of this branch."
+            fi
+          else
+            echo "Base: ${BASE_SHA:-none} (${EVENT_NAME}; no last successful run passed)."
+          fi
 
           # Fail open. A branch's first push reports an all-zero BASE_SHA, and a
           # force-push or rewritten history can leave it unfetchable; there is no
