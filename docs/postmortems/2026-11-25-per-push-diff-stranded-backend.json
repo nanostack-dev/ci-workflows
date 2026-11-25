@@ -1,0 +1,414 @@
+{
+  "title": "Prod Echopoint frontend ran ahead of its API: a per-push diff stranded #1006's backend",
+  "short": "Stranded backend deploy",
+  "service": "echopoint (CI: ci-workflows detect-changes)",
+  "date": "2026-11-25",
+  "severity": "SEV3",
+  "status": "in review",
+  "authors": [
+    "Nanostack routine (echopoint-investigation)"
+  ],
+  "summary": "echopoint #1006 (MCP permissions allow/deny, ADR-0042) merged at 16:06Z. Its main CI run went red on two frontend flakes, so its backend never built or deployed. The next four pushes were frontend-only. `detect_changes` diffed each push only against the previous push, so each reported `backend_changed=false`. The frontend-only deploy path then shipped #1006's web app to dev and prod, against an API that stayed on 8334a800 with ask mode and program runs. Echopoint has about zero users, so no customer impact is known. The fix diffs a push against the last commit a green run verified, so a red run's changes ride the next green push.",
+  "impact": {
+    "text": "From 16:24Z, the prod web app showed #1006's Allow/Deny MCP page and no program-run pages, while the prod API still served ask mode, `/program-runs/*` and `/allowed-tools/*`. The same skew existed on dev. A fourth frontend-only push (#1012) shipped at 18:34Z. No customer report and no known customer impact (Echopoint has about zero users). The #1006 migrations 117 and 118 waited with the backend.",
+    "numbers": [
+      {
+        "value": "4",
+        "label": "frontend-only deploys to prod against the old API"
+      },
+      {
+        "value": "0",
+        "label": "known affected customers"
+      },
+      {
+        "value": "2nd",
+        "label": "time this mechanism stranded a backend (first: #860, 2026-11-13)"
+      }
+    ]
+  },
+  "trigger": "The frontend of 2207351b (#1010) reached prod at 16:24:11Z through Deploy Router run 45652997315, while the prod API stayed on 8334a800.",
+  "detection": "The `echopoint-investigation` routine found the skew on its run, about two hours later, by comparing `/health` with `main`. No alert fires on a red main run or on an API commit that stays behind `main`. That alert is an open action of the 2026-11-23 SEV4 (A3, owned by a human, due 2026-12-07).",
+  "resolution": "The routine first made the gate flow `Admin impersonation refusals` (fc768d01) accept both the old and the #1006 behaviour, so the #1006 deploy cannot turn the echopoint gate red. ci-workflows #62 added `last-success-sha.yml` and a `base_sha` input to `detect-changes.yml`. echopoint #1013 opted in. Its merge push changed `go.yml`, a backend pattern, so it built and deployed the stranded #1006 backend. Dev served it at 18:36Z, the echopoint gate passed at 18:40Z, and prod API and frontend were both on 7a390ffc at 18:41:58Z.",
+  "timeline": {
+    "events": [
+      {
+        "t": "2026-11-24T22:09:28Z",
+        "kind": "change",
+        "label": "8334a800 main run green; API deployed at 8334a800",
+        "link": "https://github.com/nanostack-dev/echopoint/actions/runs/45498201256"
+      },
+      {
+        "t": "2026-11-25T05:17:39Z",
+        "kind": "change",
+        "label": "33c0f752 frontend-only main run green (last green before #1006)",
+        "link": "https://github.com/nanostack-dev/echopoint/actions/runs/45552560971"
+      },
+      {
+        "t": "2026-11-25T16:06:41Z",
+        "kind": "change",
+        "label": "#1006 merged as bdef245f",
+        "detail": "Backend and frontend: MCP permissions allow/deny, migrations 117 (delete `ask` rows) and 118 (drop five tables), removes `/program-runs/*`, `/allowed-tools/*` and `MCP_ASK_USER`.",
+        "link": "https://github.com/nanostack-dev/echopoint/pull/1006"
+      },
+      {
+        "t": "2026-11-25T16:09:08Z",
+        "kind": "change",
+        "label": "#1010 pushed as 2207351b (frontend-only)",
+        "link": "https://github.com/nanostack-dev/echopoint/actions/runs/45651390918"
+      },
+      {
+        "t": "2026-11-25T16:19:11Z",
+        "kind": "note",
+        "label": "bdef245f dagger-check red on two frontend flakes",
+        "detail": "`echopoint/motion` `ui-motion.spec.ts:416` *monitor cadence obeys reduced motion* [mobile] failed twice (`toHaveAttribute`). Storybook `flow-explorer.stories.tsx > Worst Case Table` timed out (33 s, after a retry). `ci-ok` red; `dispatch-deploy-dev` skipped.",
+        "link": "https://github.com/nanostack-dev/echopoint/actions/runs/45651109811/job/139335526783"
+      },
+      {
+        "t": "2026-11-25T16:19:21Z",
+        "kind": "note",
+        "label": "2207351b detect: base bdef245f, backend_changed=false",
+        "detail": "`BASE_SHA` was `github.event.before` = bdef245f, so the diff held only #1010's files.",
+        "link": "https://github.com/nanostack-dev/echopoint/actions/runs/45651390918/job/139340692645"
+      },
+      {
+        "t": "2026-11-25T16:24:11Z",
+        "kind": "trigger",
+        "label": "2207351b frontend live on prod; prod API on 8334a800",
+        "detail": "Deploy Router `deploy-frontend` deployed the frontend to dev at 16:23:25Z and to prod at 16:24:11Z, with no check of the prod API commit.",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/45652997315"
+      },
+      {
+        "t": "2026-11-25T16:27:15Z",
+        "kind": "note",
+        "label": "b5c6a51e (#1008) frontend live on prod",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/45653697683"
+      },
+      {
+        "t": "2026-11-25T16:46:09Z",
+        "kind": "note",
+        "label": "bc85aa39 (#1009) frontend live on prod",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/45657051443"
+      },
+      {
+        "t": "2026-11-25T18:00:00Z",
+        "approx": true,
+        "kind": "detect",
+        "label": "Routine finds dev and prod API on 8334a800 behind main",
+        "link": "https://api.echopoint.dev/health"
+      },
+      {
+        "t": "2026-11-25T18:14:00Z",
+        "kind": "note",
+        "label": "Gate flow fc768d01 accepts old or new #1006 behaviour",
+        "detail": "So the deploy of #1006 cannot turn the echopoint post-deploy gate red."
+      },
+      {
+        "t": "2026-11-25T18:25:43Z",
+        "kind": "followup",
+        "label": "ci-workflows #62 merged: last-success-sha.yml and base_sha",
+        "link": "https://github.com/nanostack-dev/ci-workflows/pull/62"
+      },
+      {
+        "t": "2026-11-25T18:28:22Z",
+        "kind": "change",
+        "label": "#1012 pushed as f09065ac (frontend-only)",
+        "link": "https://github.com/nanostack-dev/echopoint/actions/runs/45675751841"
+      },
+      {
+        "t": "2026-11-25T18:33:46Z",
+        "kind": "followup",
+        "label": "echopoint #1013 merged as 7a390ffc (opt-in)",
+        "link": "https://github.com/nanostack-dev/echopoint/pull/1013"
+      },
+      {
+        "t": "2026-11-25T18:33:59Z",
+        "kind": "note",
+        "label": "7a390ffc detect: base f09065ac from the last green run",
+        "detail": "`last_success` found run 45675751841 at f09065ac; `backend_changed=true` (this push changed `go.yml`, a backend pattern).",
+        "link": "https://github.com/nanostack-dev/echopoint/actions/runs/45676429158"
+      },
+      {
+        "t": "2026-11-25T18:34:44Z",
+        "kind": "note",
+        "label": "f09065ac (#1012) frontend live on prod: fourth skewed deploy",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/45676288271"
+      },
+      {
+        "t": "2026-11-25T18:36:04Z",
+        "kind": "mitigate",
+        "label": "Dev API live at 7a390ffc with #1006",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/45676570346"
+      },
+      {
+        "t": "2026-11-25T18:40:07Z",
+        "kind": "note",
+        "label": "Echopoint post-deploy gate green on dev",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/45676570346"
+      },
+      {
+        "t": "2026-11-25T18:41:58Z",
+        "kind": "resolve",
+        "label": "Prod API and frontend both at 7a390ffc with #1006",
+        "detail": "Backend deployed to prod at 18:41:48Z, frontend promoted at 18:41:58Z; `api.echopoint.dev/health` reports 7a390ffc.",
+        "link": "https://github.com/nanostack-dev/infra/actions/runs/45676570346"
+      }
+    ]
+  },
+  "whys": {
+    "problem": "The prod web app shipped #1006's MCP Allow/Deny page while the prod API kept ask mode and program runs",
+    "because": [
+      {
+        "text": "Four frontend-only deploys shipped HEAD's frontend; #1006's backend image was never built",
+        "evidence": "Deploy Router runs [45652997315](https://github.com/nanostack-dev/infra/actions/runs/45652997315), [45653697683](https://github.com/nanostack-dev/infra/actions/runs/45653697683), [45657051443](https://github.com/nanostack-dev/infra/actions/runs/45657051443) ran only `deploy-echopoint-frontend` and `-prod`; `/health` stayed 8334a800",
+        "because": [
+          {
+            "text": "`detect_changes` reported `backend_changed=false` for 2207351b, b5c6a51e, bc85aa39 and f09065ac",
+            "evidence": "[detect log](https://github.com/nanostack-dev/echopoint/actions/runs/45651390918/job/139340692645): `BASE_SHA: bdef245f…`, `backend_changed=false frontend_changed=true`",
+            "because": [
+              {
+                "text": "It diffed each push only against `github.event.before`, the previous push",
+                "evidence": "ci-workflows `detect-changes.yml` before #62: `BASE_SHA: … || github.event.before`",
+                "because": [
+                  {
+                    "text": "A red run deploys nothing, and nothing carried its changes into the next push's diff",
+                    "evidence": "Run [45651109811](https://github.com/nanostack-dev/echopoint/actions/runs/45651109811): `ci-ok` failure, `dispatch-deploy-dev` skipped",
+                    "because": [
+                      {
+                        "id": "R1",
+                        "root": true,
+                        "text": "Change detection measured a push against the previous push, not against the last commit a green run verified and deployed"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "text": "The frontend-only path promoted to prod without checking which API commit prod runs",
+            "evidence": "echopoint `go.yml` `dispatch-frontend-deploy-dev` sends `promote_to_prod: true`; the Deploy Router frontend runs have no gate or API check",
+            "because": [
+              {
+                "id": "R2",
+                "root": true,
+                "text": "The frontend-only deploy assumes the API already runs every earlier main commit, and nothing checks it"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "text": "#1006's main run went red although #1006 broke nothing it tested",
+        "evidence": "[Job 139335526783](https://github.com/nanostack-dev/echopoint/actions/runs/45651109811/job/139335526783): motion reduced-motion [mobile] failed twice; storybook `Worst Case Table` timed out after a retry; both pass on the next pushes",
+        "because": [
+          {
+            "text": "Both tests fail on unrelated changes: motion in 3 runs since 2026-11-24, Worst Case Table in 5 runs since 2026-11-22",
+            "evidence": "Scan of the 90 runs with a failed dagger-check among 418 completed Go Build and Test runs, 2026-11-11..25. Main runs: Worst Case Table 8f2e4c6e and bdef245f; motion bdef245f",
+            "because": [
+              {
+                "id": "R3",
+                "root": true,
+                "text": "Repeat flakes in the frontend checks have no tracker, owner or quarantine, so they keep failing main runs"
+              },
+              {
+                "text": "Why each test flakes (timing of the reduced-motion state on mobile, a 33 s story timeout) is not diagnosed yet",
+                "open": true
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "lens": "impact",
+        "text": "The skew lasted hours and no alert fired",
+        "evidence": "First signal is the routine's own `/health` check, about 2 h after the trigger",
+        "because": [
+          {
+            "text": "No monitor compares the deployed API commit with main, and a red main run alerts nobody",
+            "evidence": "2026-11-23 SEV4 ([Atelier](http://nanostack-dev-1340p:4320/postmortems/01a20aeb-3a9c-7ee2-be59-4f6bdf466d7f)) action A3 red-main alert: open, due 2026-12-07",
+            "because": [
+              {
+                "id": "R4",
+                "root": true,
+                "text": "A stranded backend change is invisible until someone compares /health with main by hand"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "lens": "impact",
+        "text": "It happened a second time: on 2026-11-13 #860 was stranded the same way",
+        "evidence": "Routine ledger row 87: `mitigated`, \"root cause unfixed, waits on task_ad0e05c4 or a human\"",
+        "because": [
+          {
+            "text": "The postmortem and CI fix went to a spawned task chip that nobody started",
+            "evidence": "No postmortem or PR for row 87 in ci-workflows or echopoint between 2026-11-13 and 2026-11-25",
+            "because": [
+              {
+                "id": "R5",
+                "root": true,
+                "text": "A ledger row could rest at `mitigated` with its root cause unfixed and its only fix in an unstarted task"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "contributing": [
+    "Four frontend-only pushes came within 2.5 hours of the red run, so each green run moved the push-to-push base past #1006.",
+    "Each frontend-only run was green, so the newest green commit before the fix (f09065ac) also predates it: the fix covers red runs from now on, and #1006 shipped only because #1013 itself changed a backend pattern.",
+    "The `dagger_check` story scope also diffed from `github.event.before`, so a story that failed on a red push was not rerun on the next push."
+  ],
+  "lessons": {
+    "well": [
+      "The routine changed the gate flow to accept both behaviours before the stranded backend deployed, so the deploy could not turn the echopoint gate red.",
+      "`ci-ok` blocked the backend deploy of a red run, as designed: nothing unverified reached prod's API."
+    ],
+    "wrong": [
+      "The same mechanism hit on 2026-11-13 and its fix was never written.",
+      "The first version of echopoint #1013 skipped `last_success` on pull requests. GitHub then skipped `migrations-verify`, `migration-lint` and `preview-flag` transitively, and `ci-ok` would still pass. The PR run showed it before the merge."
+    ],
+    "lucky": [
+      "Echopoint has about zero users, so a prod web app that called an older API reached nobody.",
+      "#1006's frontend and the old API failed in a visible way (missing pages), not by writing wrong data.",
+      "Adding `actions: read` directly to `detect-changes.yml` would have failed anchor and atelier at startup, since a called workflow cannot ask for more than its caller grants. The design review caught it before the merge."
+    ]
+  },
+  "actions": [
+    {
+      "id": "A1",
+      "what": "`last-success-sha.yml` finds the last green push run; `detect-changes.yml` diffs a push from its commit (`base_sha`), else the previous push",
+      "type": "prevent",
+      "owner": "Nanostack routine (echopoint-investigation)",
+      "due": "2026-11-25",
+      "status": "done",
+      "ticket": {
+        "label": "ci-workflows#62",
+        "url": "https://github.com/nanostack-dev/ci-workflows/pull/62"
+      },
+      "fixes": [
+        "R1"
+      ]
+    },
+    {
+      "id": "A2",
+      "what": "echopoint `go.yml` opts in (`last_success` job with `actions: read`), scopes the frontend stories from the same commit, and `ci-ok` fails if the lookup fails",
+      "type": "prevent",
+      "owner": "Nanostack routine (echopoint-investigation)",
+      "due": "2026-11-25",
+      "status": "done",
+      "ticket": {
+        "label": "echopoint#1013",
+        "url": "https://github.com/nanostack-dev/echopoint/pull/1013"
+      },
+      "fixes": [
+        "R1"
+      ]
+    },
+    {
+      "id": "A3",
+      "what": "anchor and atelier `go.yml` opt in the same way (last_success never skipped, `actions: read`, `base_sha`, ci-ok gate)",
+      "type": "prevent",
+      "owner": "Nanostack routine (echopoint-investigation)",
+      "due": "2026-12-02",
+      "status": "open",
+      "fixes": [
+        "R1"
+      ]
+    },
+    {
+      "id": "A4",
+      "what": "infra Deploy Router `deploy-frontend` promotes to prod only when the prod API runs the newest backend-changing main commit at or before the frontend's commit; otherwise it holds and says why",
+      "type": "prevent",
+      "owner": "infra maintainers",
+      "due": "2026-12-09",
+      "status": "open",
+      "fixes": [
+        "R2"
+      ]
+    },
+    {
+      "id": "A5",
+      "what": "Diagnose and fix or quarantine the motion reduced-motion [mobile] test and the `Worst Case Table` story, and track repeat frontend flakes with an owner",
+      "type": "prevent",
+      "owner": "echopoint frontend maintainers",
+      "due": "2026-12-09",
+      "status": "open",
+      "fixes": [
+        "R3"
+      ]
+    },
+    {
+      "id": "A6",
+      "what": "Alert when main CI is red, or when the API `/health` commit stays behind main's newest backend change for over an hour (2026-11-23 SEV4 action A3)",
+      "type": "detect",
+      "owner": "human (infra maintainers)",
+      "due": "2026-12-07",
+      "status": "open",
+      "fixes": [
+        "R4"
+      ]
+    },
+    {
+      "id": "A7",
+      "what": "Postmortem loop: a `mitigated` row with an unfixed root cause gets its fix in the next routine run, never only in a spawned task",
+      "type": "process",
+      "owner": "Nanostack routine (echopoint-investigation) parent",
+      "due": "2026-11-26",
+      "status": "open",
+      "fixes": [
+        "R5"
+      ]
+    },
+    {
+      "id": "A8",
+      "what": "Guide lines: ci-workflows AGENTS.md (change detection gates deploys, diff from the last green commit) and echopoint AGENTS.md (a red-run PR ships with the next green push; check `/health`)",
+      "type": "process",
+      "owner": "Nanostack routine (echopoint-investigation)",
+      "due": "2026-11-25",
+      "status": "done",
+      "fixes": [
+        "R1",
+        "R5"
+      ]
+    }
+  ],
+  "responders": [
+    {
+      "role": "Detection, diagnosis and fix",
+      "name": "Nanostack routine (echopoint-investigation)"
+    }
+  ],
+  "messaging": {
+    "internal": "SEV3 echopoint: #1006's backend did not deploy after a red main run (two frontend flakes), while four frontend-only pushes shipped its web app to prod against the old API. Root cause: detect_changes diffed a push only against the previous push. Fixed in ci-workflows #62 and echopoint #1013, which also deploys #1006. Open: anchor/atelier opt-in, an infra frontend-promotion guard, the two flakes, and a red-main alert.",
+    "external": "None: no known customer impact."
+  },
+  "links": [
+    {
+      "label": "Atelier postmortem",
+      "url": "http://nanostack-dev-1340p:4320/postmortems/01a21406-a689-75bd-ba7a-b40b42f9c01e"
+    },
+    {
+      "label": "echopoint#1006",
+      "url": "https://github.com/nanostack-dev/echopoint/pull/1006"
+    },
+    {
+      "label": "Red main run 45651109811",
+      "url": "https://github.com/nanostack-dev/echopoint/actions/runs/45651109811"
+    },
+    {
+      "label": "ci-workflows#62 (fix)",
+      "url": "https://github.com/nanostack-dev/ci-workflows/pull/62"
+    },
+    {
+      "label": "echopoint#1013 (opt-in)",
+      "url": "https://github.com/nanostack-dev/echopoint/pull/1013"
+    },
+    {
+      "label": "Related SEV4 2026-11-23 (CT flake stranded #988)",
+      "url": "http://nanostack-dev-1340p:4320/postmortems/01a20aeb-3a9c-7ee2-be59-4f6bdf466d7f"
+    }
+  ]
+}
